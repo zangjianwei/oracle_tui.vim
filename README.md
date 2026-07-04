@@ -1,5 +1,6 @@
 # Introduction  
 A lightweight, terminal-based UNIX/LINUX Oracle database client built for Vim. It interacts with sqlplus via pipes to provide a GUI-like data editing experience right in your terminal.
+![GIF替代文本，当图片加载失败时显示](./images/oracle_tui_en.gif)
 # Features
   - Rapid Connection: Supports auto-login via environment variables; connect to your database with a single command.
   - Spreadsheet-like Editing: Edit data in Vim just like Excel (SELECT ... FOR UPDATE).
