@@ -1,5 +1,5 @@
-                                                Vim Oracle TUI Client 
-    A lightweight, terminal-based UNIX/LINUX Oracle database client built for Vim. It interacts with sqlplus via pipes to provide a GUI-like data editing experience right in your terminal.
+# Introduction  
+A lightweight, terminal-based UNIX/LINUX Oracle database client built for Vim. It interacts with sqlplus via pipes to provide a GUI-like data editing experience right in your terminal.
 # Features
   - Rapid Connection: Supports auto-login via environment variables; connect to your database with a single command.
   - Spreadsheet-like Editing: Edit data in Vim just like Excel (SELECT ... FOR UPDATE).
