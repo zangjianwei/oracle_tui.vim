@@ -37,9 +37,9 @@ A lightweight, terminal-based UNIX/LINUX Oracle database client built for Vim. I
 2. Extract the file: tar xvf oracle_tui.tar.
 3. Modify the profile by adding the following environment variables.  
        export PATH=$PATH:$HOME/oracle_tui:.
-4. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8. If not, modify the profile by adding the following environment variables  
-   export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"
-   export TUI_LC_CTYPE=zh_CN.UTF-8
+4. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8. If not, modify the profile by adding the following environment variables(Please select your [language]_[territory] setting)  
+   export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"
+   export TUI_LC_CTYPE=en_US.UTF-8
 6. Set the file encoding to UTF-8.  
     Add the following settings to ~/.vimrc or your own .vimrc file:   
     set encoding=utf-8  
