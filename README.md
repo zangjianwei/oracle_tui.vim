@@ -56,7 +56,7 @@ A lightweight, terminal-based UNIX/LINUX Oracle database client built for Vim. I
     alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'  
 
     If this alias is set, typing vidb will automatically connect to the database.  
-9. Source the profile to apply the changes: (e.g., source ~/.bashrc).
+9. Source the profile to apply the changes: (e.g., . ~/.profile).
 
 # Startup Steps
 1. Set the terminal encoding to UTF-8.
