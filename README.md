@@ -143,3 +143,5 @@ A lightweight, terminal-based UNIX/LINUX Oracle database client built for Vim. I
 # ⚠️ Limitations
   - Modifications for fields containing LONG or LONG RAW types are not supported in Data Modification Window.
   - Vim 9 on AIX has a bug processing list; therefore, Vim 9 cannot be used on AIX.
+
+                                                  zangjianwei35@gmail.com
