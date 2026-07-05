@@ -1,0 +1,197 @@
+set ts=4
+set nocompatible
+set virtualedit=all
+"set virtualedit=
+set incsearch
+set noequalalways
+set cul
+set winwidth=1  "设置窗口最小宽度等于1
+set winheight=1 "设置窗口最小高度等于1
+
+set ruler		" show the cursor position all the time
+set showcmd		" display incomplete commands
+
+
+"autocmd BufReadPost *
+"			\ if line("'\"") > 0 && line("'\"") <= line("$") |
+"			\   exe "normal! g`\"" |
+"			\ endif
+
+set scb
+set sbo=hor
+set nowrap
+
+command WH set sbo=hor|sp | resize 3 | exec "normal gg" | wincmd j
+"command WH set sbo=hor|2 sp +2 
+"map ww :sp2_ggj
+map wh :WH
+"command WV set sbo=ver|vsp|vertical res 10|exec "normal ^"|wincmd l
+"command WV set sbo=ver|vsp|vertical res 20|wincmd l
+command WV set sbo=ver|vsp|wincmd l
+"map wv :WV
+noremap q :qall!
+
+function! Addcolname(tabname, ...)
+	"sil exec ":!crtcol.sh  ".a:tabname
+	"sil exec "0 r "a:tabname.".col"
+	if a:0 == 1
+		exec "0 r !crtcol.sh ".a:tabname." \"".a:1."\""
+		let b:cmd="1,$ !awk -v fgf=\"".a:1."\" -f ~/tbin/align.awk"
+		exec b:cmd
+		"1,$ !awk  -v fgf=a:1 -f ~/tbin/align.awk
+	else
+		exec "0 r !crtcol.sh ".a:tabname
+		1,$ !awk  -v fgf="," -f ~/tbin/align.awk
+	endif
+endfun
+command! -nargs=+ Addcolname call Addcolname(<f-args>)
+
+au VimEnter * echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助  q退出"
+
+set tags=$HOME/user/zjw/bin/.tags
+set tags+=$HOME/zf2/src/.tags
+set tags+=$HOME/user/zjw/tmp/tags
+"set tags+=/home/bassdep/app/basp/trans/yxds/.tags
+"set path+=/$HOME/include
+
+function! AddnumA()
+	1,$ s/^/\=printf("%5s ",line("."))
+endfun
+command! AddnumA call AddnumA()
+
+function! Addnum() range
+	let n = a:firstline
+	let num = 1
+	while n <= a:lastline
+		let line = getline(n)
+		let repl = substitute(line, '^', num.". ", "g")
+		call setline(n, repl)
+		let n = n + 1
+		let num = num + 1
+	endwhile
+endfun
+com! -range Addnum <line1>,<line2> call Addnum()
+
+function! Addnum0(...) range
+	let n = a:firstline
+	let num = 1
+	while n <= a:lastline
+		let line = getline(n)
+	    let nums=printf("%05d",num)
+		if a:0 == 1
+			let repl = substitute(line, '^', nums.a:1, "g")
+		else
+			let repl = substitute(line, '^', nums, "g")
+		endif
+		call setline(n, repl)
+		let n = n + 1
+		let num = num + 1
+	endwhile
+endfun
+com! -nargs=? -range=% Addnum0 <line1>,<line2> call Addnum0(<f-args>)
+
+
+ab ks 子交易.*开始
+ab js 子交易.*结束
+
+"set diffopt+=iwhite "比较时忽略空白字符,但是前面的空白符不忽略
+set diffexpr=DiffW()
+function DiffW()
+    let opt=""
+    if &diffopt =~ "icase"
+        let opt = opt . "-i "
+    endif
+    if &diffopt =~ "iwhite"
+        let opt = opt . "-w "
+    endif
+
+    silent execute "!diff " . opt .  v:fname_in . " " . v:fname_new . " > " . v:fname_out
+endfun
+
+fun! s:VerSplit()
+	set sbo=ver
+	let line = line('.') 
+	let col = col('.')
+	exec "normal gg"
+	vsp
+	wincmd l
+	normal j "要执行一下此步骤，否则滚动不同步
+	call cursor(line,col)
+endfun
+
+nnoremap <silent> <buffer> wv :VerSplit
+
+function! Sum() range
+	let reg_bak = @a
+	let @a = ""
+
+	sil normal! gv"ay
+	let buffers=@a
+	let @a = reg_bak
+
+	let tot = 0
+
+	for line in split(buffers, '\n')
+		let tot = tot + str2float(line)
+	endfor
+
+	let str_tot = string(tot)
+	if str_tot =~ "\."
+		let str_tot = substitute(str_tot, '0*$', "", "g")
+		let str_tot = substitute(str_tot, '\.$', "", "g")
+	endif
+	echo str_tot
+endfun
+com! -range Sum <line1>,<line2> call Sum()
+
+let g:space_flag = 0
+"diff时是否比较空格
+function DiffSpace()
+	if g:space_flag == 0
+		set diffopt+=iwhite "比较时忽略空白字符,但是前面的空白符不忽略
+		let g:space_flag = 1
+	else
+		set diffopt=
+		let g:space_flag = 0
+	endif
+	redraw!
+endfun
+
+nnoremap J 15j
+nnoremap K 15k
+
+"- 减小窗口宽度
+nnoremap - <
+"_ 增加窗口宽度
+nnoremap = >
+
+"= 减小窗口高度
+nnoremap _ -  
+"+  增加窗口高度
+nnoremap + +
+
+nnoremap <silent> [ zh
+nnoremap <silent> ] zl
+nnoremap <silent> { zH
+nnoremap <silent> } zL
+
+"<F9> diff时是否比较空格 
+nnoremap <silent> <buffer> [20~ :call DiffSpace()
+
+" Vim 内部使用 UTF-8
+set encoding=utf-8
+" 保存文件时，默认也使用 UTF-8 编码
+"set fileencoding=utf-8
+" 打开文件时，按此顺序尝试解码
+"gb18030要放在gbk前面,否则有时识别编码错误
+set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1 
+" 告诉 Vim，我的终端也是 UTF-8
+set termencoding=utf-8
+
+
+"高亮显示(如果terminfo库有问题，则不能语法高亮)
+if &t_Co == 0 || empty(&t_Sf) || empty(&t_Sb)
+	set t_Co=8
+	set t_Sf=[3%p1%dm
+	set t_Sb=[4%p1%dm
+endif
