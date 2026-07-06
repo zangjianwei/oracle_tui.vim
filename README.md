@@ -144,4 +144,8 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
   - Modifications for fields containing LONG or LONG RAW types are not supported in Data Modification Window.
   - Vim 9 on AIX has a bug processing list; therefore, Vim 9 cannot be used on AIX.
 
-                                                  zangjianwei35@gmail.com
+## Author
+**zangjianwei**
+
+- GitHub: [@zangjianwei](https://github.com/zangjianwei)
+- Email: [zangjianwei35@gmail.com](mailto:zangjianwei35@gmail.com)
