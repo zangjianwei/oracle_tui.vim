@@ -1,6 +1,6 @@
 # Introduction  
 A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience of GUI applications. Powered by SQL*Plus for SQL execution, it offers spreadsheet-like data manipulation in tabular format—edit data as easily as in Excel, with automatic alignment upon modification. Additional capabilities include execution plan analysis, table structure viewing, DDL extraction for database objects, transaction control, LOB field editing, smart autocompletion (with mid-string matching support), and sticky column headers for seamless navigation.
-![演示](https://github.com/zangjianwei/oracle_tui.vim/blob/master/images/oracle_tui_cn.gif)
+![演示]()https://github.com/zangjianwei/oracle_tui.vim/blob/master/images/oracle_tui_en.gif
 # Features
   - Rapid Connection: Supports auto-login via environment variables; connect to your database with a single command.
   - Spreadsheet-like Editing: Edit data in Vim just like Excel (SELECT ... FOR UPDATE).
