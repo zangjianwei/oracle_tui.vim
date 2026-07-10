@@ -1,6 +1,6 @@
 # Introduction  
 A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience of GUI applications. Powered by SQL*Plus for SQL execution, it offers spreadsheet-like data manipulation in tabular format—edit data as easily as in Excel, with automatic alignment upon modification. Additional capabilities include execution plan analysis, table structure viewing, DDL extraction for database objects, transaction control, LOB field editing, smart autocompletion (with mid-string matching support), and sticky column headers for seamless navigation.
-![演示]()https://github.com/zangjianwei/oracle_tui.vim/blob/master/images/oracle_tui_en.gif
+![Screenshot](https://raw.githubusercontent.com/zangjianwei/oracle_tui.vim/master/images/oracle_tui_en.gif)
 # Features
   - Rapid Connection: Supports auto-login via environment variables; connect to your database with a single command.
   - Spreadsheet-like Editing: Edit data in Vim just like Excel (SELECT ... FOR UPDATE).
@@ -74,7 +74,7 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 | F2 / F6       | Rollback / Commit Transaction                                                |
 | F4            | Check for uncommitted transactions                                           |
 | F5            | View SQL Execution Plan                                                      |
-| F7            | List Database Objects                                                        |
+| F7            | List Database Objects<br>F9 and F10 work in the popup window                 |
 | F9            | Show table structure description for the table under the cursor              |
 | F10           | Show DDL statement for the object under the cursor                           |
 | - / =         | Decrease / Increase window width                                             |
@@ -84,7 +84,7 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 | Ctrl+→        | Jump to the right window                                                     |
 | Ctrl+←        | Jump to the left window                                                      |
 | Ctrl+n        | Object name auto-complete (Prefix only, Insert mode)                         |
-| Ctrl+k        | table name auto-complete (Suport not prefix,Insert or normal mode)           |
+| Ctrl+k        | table name auto-complete (Suport not prefix,Insert or normal mode)<br>F9 and F10 work in the popup window|
 | gt            | Switch between tabs                                                          |
 | :Tablist      | Show table name and comment                                                  |
 | :Seelock      | View locks                                                                   |
