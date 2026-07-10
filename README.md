@@ -74,7 +74,7 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 | F2 / F6       | Rollback / Commit Transaction                                                |
 | F4            | Check for uncommitted transactions                                           |
 | F5            | View SQL Execution Plan                                                      |
-| F7            | List Database Objects                                                        |
+| F7            | List Database Objects<br>F9 and F10 work in the popup window                 |
 | F9            | Show table structure description for the table under the cursor              |
 | F10           | Show DDL statement for the object under the cursor                           |
 | - / =         | Decrease / Increase window width                                             |
@@ -84,7 +84,7 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 | Ctrl+→        | Jump to the right window                                                     |
 | Ctrl+←        | Jump to the left window                                                      |
 | Ctrl+n        | Object name auto-complete (Prefix only, Insert mode)                         |
-| Ctrl+k        | table name auto-complete (Suport not prefix,Insert or normal mode)           |
+| Ctrl+k        | table name auto-complete (Suport not prefix,Insert or normal mode)<br>F9 and F10 work in the popup window|
 | gt            | Switch between tabs                                                          |
 | :Tablist      | Show table name and comment                                                  |
 | :Seelock      | View locks                                                                   |
