@@ -40,7 +40,7 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
    ```
    sh ./install.sh
    ```
-4. Modify the profile by adding the following environment variables.
+4. Modify the profile by adding the following environment variables.  
        ```
        export PATH=$PATH:$HOME/oracle_tui:.
        ```
@@ -81,17 +81,19 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
     ```  
 
     If this alias is set, typing vidb will automatically connect to the database.    
-14. Source the profile to apply the changes: (e.g., . ~/.profile).
-15. Install help files (optional)  
+14. Source the profile to apply the changes:  
+    For example
+    ```
+    . ~/.profile
+    ```
+16. Install help files (optional)  
     vim
     ```
     :helptags ~/.vim/doc
     ```
 
-# Startup Steps
-1. Set the terminal encoding to UTF-8.
-2. Method 1:    
-   Open vim and enter  
+# Startup Method
+1. Open vim and enter  
    ```  
    :Connect
    ```  
@@ -100,11 +102,11 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
    :Connect -u
    ```
    to manually enter the username and password.
-4. Method 2:  
-   Use the alias for auto-start by typing  
+2. Use the alias for auto-start by typing  
    ```
    vidb <filename>.  
    ```
+NOTE：Before starting, please set the terminal encoding to UTF-8
 # Keybindings
 ## SQL Execution Window
 | Key           | Function                                                                     |
