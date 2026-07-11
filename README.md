@@ -46,9 +46,9 @@
 
 ## 安装步骤
 
-1. 将 `oracle_tui.tar` 放在安装用户的 `$HOME` 目录下。
-2. 解压文件：`tar xvf oracle_tui.tar`。
-3. 在 profile 文件中添加以下环境变量：  
+1. cd /install.sh文件所在目录  
+   sh ./install.sh
+4. 在 profile 文件中添加以下环境变量：  
     export PATH=$PATH:$HOME/oracle_tui:.
 5. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。  
      如果不是请设置下面变量  
@@ -77,7 +77,10 @@
     alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'
    
     设置别名后，输入 `vidb` 即可自动连接数据库。  
-11. 使 profile 生效（例如：`. ~/.profile`）。  
+11. 使 profile 生效（例如：`. ~/.profile`）。
+12. 安装帮助文件(可选)  
+  vim  
+  :helptags ~/.vim/doc  
 
 # 启动步骤
 
