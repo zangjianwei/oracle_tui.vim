@@ -51,11 +51,11 @@
 4. 在 profile 文件中添加以下环境变量：  
     export PATH=$PATH:$HOME/oracle_tui:.
 5. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。  
-     如果不是请设置下面变量  
+     如果不是请在profile中设置下面变量  
      export NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"    
      export LC_CTYPE=zh_CN.UTF-8  
 
-     如果你不想修改上面环境变量的值,请设置下面环境变量  
+     如果你不想修改上面环境变量的值,请在profile中设置下面环境变量  
      export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"  
      export TUI_LC_CTYPE=zh_CN.UTF-8  
      (请选择正确的[语言]_[地区])  
