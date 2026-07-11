@@ -37,49 +37,74 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
   - Vim 7.4+(Vim 8.2 or above is recommended. Vim 7.4 has some functional limitations.)
 ## Steps
 1. Change to the directory where the install.sh file is located.  
-   sh ./install.sh  
-4. Modify the profile by adding the following environment variables.  
+   ```
+   sh ./install.sh
+   ```
+4. Modify the profile by adding the following environment variables.
+       ```
        export PATH=$PATH:$HOME/oracle_tui:.
-5. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8.  
+       ```
+6. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8.  
    If not, please set the following variables in profile:   
+   ```
    export NLS_LANG="AMERICAN_AMERICA.AL32UTF8"    
    export LC_CTYPE=en_US.UTF-8  
-
+   ```
    If you prefer not to modify the above environment variables, you can set the following alternative variables instead (the plugin will prioritize these) in profile:  
+   ```
    export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"   
-   export TUI_LC_CTYPE=en_US.UTF-8  
-   (Please select your [language]_[territory] setting)   
-6. Set the file encoding to UTF-8.  
+   export TUI_LC_CTYPE=en_US.UTF-8
+   ```
+   Note：Please select your [language]_[territory] setting
+8. Set the file encoding to UTF-8.  
     Add the following settings to ~/.vimrc or your own .vimrc file:   
+    ```
     set encoding=utf-8  
     set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1  
-    set termencoding=utf-8  
-7. Modify the profile to add the DBUSER and DBPASS environment variables (optional):  
+    set termencoding=utf-8
+    ```
+10. Modify the profile to add the DBUSER and DBPASS environment variables (optional):  
+    ```
     export DBUSER=user  
     export DBPASS=pass  
-      
+    ```   
     If these variables are set, the tool will start using them automatically. If not, you will be prompted to enter the username and password manually.  
-8. Set an alias in the user's profile (optional):  
+12. Set an alias in the user's profile (optional):
+    ```
     alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'    
 
     Or    
     alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'  
 
     Or Alternatively, specify the file encoding format (no need to set it in .vimrc).  
-    alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'  
+    alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'
+    ```  
 
     If this alias is set, typing vidb will automatically connect to the database.    
-10. Source the profile to apply the changes: (e.g., . ~/.profile).
-11. Install help files (optional)  
-    vim  
-    :helptags ~/.vim/doc  
+14. Source the profile to apply the changes: (e.g., . ~/.profile).
+15. Install help files (optional)  
+    vim
+    ```
+    :helptags ~/.vim/doc
+    ```
 
 # Startup Steps
 1. Set the terminal encoding to UTF-8.
-2. Method 1:  
-   Open vim and enter :Connect. If the DBUSER and DBPASS environment variables are set, the tool will log in using those credentials. Otherwise, you will be prompted to enter the username and password. Alternatively, you can force the login prompt by entering :Connect -u to manually enter the username and password.
-3. Method 2:  
-   Use the alias for auto-start by typing vidb <filename>.  
+2. Method 1:    
+   Open vim and enter  
+   ```  
+   :Connect
+   ```  
+   If the DBUSER and DBPASS environment variables are set, the tool will log in using those credentials. Otherwise, you will be prompted to enter the username and password. Alternatively, you can force the login prompt by entering  
+   ```
+   :Connect -u
+   ```
+   to manually enter the username and password.
+4. Method 2:  
+   Use the alias for auto-start by typing  
+   ```
+   vidb <filename>.  
+   ```
 # Keybindings
 ## SQL Execution Window
 | Key           | Function                                                                     |
