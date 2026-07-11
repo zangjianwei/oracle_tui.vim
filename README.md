@@ -46,7 +46,7 @@
 
 ## 安装步骤
 
-1. cd /install.sh文件所在目录  
+1. cd install.sh文件所在目录  
    sh ./install.sh
 4. 在 profile 文件中添加以下环境变量：  
     export PATH=$PATH:$HOME/oracle_tui:.
