@@ -49,42 +49,24 @@
 1. 将 `oracle_tui.tar` 放在安装用户的 `$HOME` 目录下。
 2. 解压文件：`tar xvf oracle_tui.tar`。
 3. 在 profile 文件中添加以下环境变量：
-export PATH=
-P
-A
-T
-H
-:
-PATH:HOME/oracle_tui:.
-
-text
-4. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。如果没有，在 profile 文件中添加以下环境变量（请根据你的 [语言]_[地区] 设置选择）：
-export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"
-export TUI_LC_CTYPE=en_US.UTF-8
-
-text
-5. 设置文件编码为 UTF-8。在 `~/.vimrc` 或你自己的 `.vimrc` 文件中添加以下配置：
-set encoding=utf-8
-set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1
-set termencoding=utf-8
-
-text
-6. 在 profile 文件中添加 `DBUSER` 和 `DBPASS` 环境变量（可选）：
-export DBUSER=user
-export DBPASS=pass
-
-text
+    export PATH=$PATH:$HOME/oracle_tui:.
+5. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。如果没有，在 profile 文件中添加以下环境变量（请根据你的 [语言]_[地区] 设置选择）：
+    export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"
+    export TUI_LC_CTYPE=en_US.UTF-8
+6. 设置文件编码为 UTF-8。在 `~/.vimrc` 或你自己的 `.vimrc` 文件中添加以下配置：
+    set encoding=utf-8
+    set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1
+    set termencoding=utf-8
+7. 在 profile 文件中添加 `DBUSER` 和 `DBPASS` 环境变量（可选）：
+    export DBUSER=user
+    export DBPASS=pass
 如果设置了这些变量，工具将自动使用它们登录；否则会提示手动输入用户名和密码。
-7. 在 profile 文件中设置别名（可选）：
-alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'
-
-text
-或
-alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'
-
-text
-设置别名后，输入 `vidb` 即可自动连接数据库。
-8. 使 profile 生效（例如：`. ~/.profile`）。
+8. 在 profile 文件中设置别名（可选）：
+    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'
+    或
+    alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'
+    设置别名后，输入 `vidb` 即可自动连接数据库。
+9. 使 profile 生效（例如：`. ~/.profile`）。
 
 # 启动步骤
 
