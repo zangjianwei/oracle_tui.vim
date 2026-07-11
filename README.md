@@ -40,9 +40,15 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 2. Extract the file: tar xvf oracle_tui.tar.
 3. Modify the profile by adding the following environment variables.  
        export PATH=$PATH:$HOME/oracle_tui:.
-4. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8. If not, modify the profile by adding the following environment variables(Please select your [language]_[territory] setting)  
-   export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"  
+4. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8.  
+   If not, please set the following variables:   
+   export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"    
    export TUI_LC_CTYPE=en_US.UTF-8  
+
+   If you prefer not to modify the above environment variables, you can set the following alternative variables instead (the plugin will prioritize these):  
+   export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"  
+   export TUI_LC_CTYPE=zh_CN.UTF-8  
+   (Please select your [language]_[territory] setting)   
 6. Set the file encoding to UTF-8.  
     Add the following settings to ~/.vimrc or your own .vimrc file:   
     set encoding=utf-8  
@@ -54,12 +60,16 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
       
     If these variables are set, the tool will start using them automatically. If not, you will be prompted to enter the username and password manually.  
 8. Set an alias in the user's profile (optional):  
-    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'  
-    Or  
+    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'    
+
+    Or    
     alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'  
 
-    If this alias is set, typing vidb will automatically connect to the database.  
-9. Source the profile to apply the changes: (e.g., . ~/.profile).
+    Or Alternatively, specify the file encoding format (no need to set it in .vimrc).  
+    alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'  
+
+    If this alias is set, typing vidb will automatically connect to the database.    
+10. Source the profile to apply the changes: (e.g., . ~/.profile).
 
 # Startup Steps
 1. Set the terminal encoding to UTF-8.
@@ -114,7 +124,8 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 | TAB     | Jump to next field                            |
 | Ctrl+t  | Jump to previous field                        |
 | F11     | Show current SQL statement                    |
-| Crtsql  | Generate SQL based on current data file       |
+| :Crtsql  | Generate SQL based on current data file      |
+| :Filter /match_str  | Filter the current column for content that matches the specified pattern  |
 | Ctrl+X  | shorten column length                         |
 | \x      | Cut the current column                        |
 | \p      | Paste the cut column after the current column |
@@ -146,6 +157,8 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 # ⚠️ Limitations
   - Modifications for fields containing LONG or LONG RAW types are not supported in Data Modification Window.
   - Vim 9 on AIX has a bug processing list; therefore, Vim 9 cannot be used on AIX.
+  - Vim 7.4 limitations  
+    In the data modification window, the zl, zh, zL, zH commands cannot be executed. Tab characters are displayed as ^F during editing, and vertical window splitting is not supported.  
 
 ## Author
 **zangjianwei**
