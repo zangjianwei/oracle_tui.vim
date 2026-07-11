@@ -6,7 +6,7 @@
 
 一款功能完备、原生运行于 UNIX/Linux Vim 环境中的 Oracle 客户端，提供媲美 GUI 工具的用户体验。基于 SQL*Plus 执行 SQL，支持电子表格风格的数据操作——像 Excel 一样编辑数据，修改后自动对齐。此外还支持执行计划分析、表结构查看、数据库对象 DDL 提取、事务控制、LOB 字段编辑、智能自动补全（支持中间字符串匹配）以及标题行固定等功能。
 
-![演示动图](https://raw.githubusercontent.com/zangjianwei/oracle_tui.vim/master/images/oracle_tui_en.gif)
+
 
 # 功能特性
 
