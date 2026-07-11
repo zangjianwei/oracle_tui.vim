@@ -47,48 +47,75 @@
 ## 安装步骤
 
 1. cd install.sh文件所在目录  
+   ```
    sh ./install.sh
-4. 在 profile 文件中添加以下环境变量：  
+   ```
+4. 在 profile 文件中添加以下环境变量：
+    ```
     export PATH=$PATH:$HOME/oracle_tui:.
-5. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。  
+    ```
+6. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。  
      如果不是请在profile中设置下面变量  
+     ```
      export NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"    
      export LC_CTYPE=zh_CN.UTF-8  
-
-     如果你不想修改上面环境变量的值,请在profile中设置下面环境变量  
+     ```
+     如果你不想修改上面环境变量的值,请在profile中设置下面环境变量
+     ```
      export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"  
-     export TUI_LC_CTYPE=zh_CN.UTF-8  
-     (请选择正确的[语言]_[地区])  
-7. 设置文件编码为 UTF-8。在 `~/.vimrc` 或你自己的 `.vimrc` 文件中添加以下配置：  
+     export TUI_LC_CTYPE=zh_CN.UTF-8
+     ```
+     注意：请选择正确的[语言]_[地区]
+8. 设置文件编码为 UTF-8。在 `~/.vimrc` 或你自己的 `.vimrc` 文件中添加以下配置：  
+    ```
     set encoding=utf-8  
     set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1  
-    set termencoding=utf-8  
-8. 在 profile 文件中添加 `DBUSER` 和 `DBPASS` 环境变量（可选）：  
+    set termencoding=utf-8
+    ```
+10. 在 profile 文件中添加 `DBUSER` 和 `DBPASS` 环境变量（可选）：
+    ```
     export DBUSER=user  
-    export DBPASS=pass  
-如果设置了这些变量，工具将自动使用它们登录；否则会提示手动输入用户名和密码。  
-9. 在 profile 文件中设置别名（可选）：  
-    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'
-   
+    export DBPASS=pass
+    ```
+    如果设置了这些变量，工具将自动使用它们登录；否则会提示手动输入用户名和密码。  
+12. 在 profile 文件中设置别名（可选）：  
+    ```   
+    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'   
     或  
-    alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'
-   
-    或者指定文件编码格式(不用在.vimrc指定文件编码格式)  
-    alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'
-   
-    设置别名后，输入 `vidb` 即可自动连接数据库。  
-11. 使 profile 生效（例如：`. ~/.profile`）。
-12. 安装帮助文件(可选)  
-  vim  
+    alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'   
+    或者指定文件编码格式(不用在.vimrc指定文件编码格式)     
+    alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'   
+    ```   
+    设置别名后，输入 `vidb` 即可自动连接数据库。   
+13. 使 profile 生效
+    例如：  
+    ```
+    . ~/.profile
+    ```   
+14. 安装帮助文件(可选)  
+  打开 Vim 
+  ```
   :helptags ~/.vim/doc  
-
+  ```
 # 启动步骤
 
 1. 将终端编码设置为 UTF-8。
-2. 方法一：
-打开 Vim 并输入 `:Connect`。如果设置了 `DBUSER` 和 `DBPASS` 环境变量，工具将使用它们登录；否则会提示输入用户名和密码。也可以输入 `:Connect -u` 强制弹出登录提示手动输入。
-3. 方法二：
-使用别名自动启动，输入 `vidb <文件名>`。
+2. 方法一：  
+  打开 Vim
+   ```  
+   :Connect
+   ```  
+   如果设置了 `DBUSER` 和 `DBPASS` 环境变量，使用它们登录；否则会提示输入用户名和密码。  
+
+   ```  
+   :Connect -u
+   ```  
+   强制弹出登录提示手动输入。   
+4. 方法二：  
+  使用别名自动启动，输入
+    ```
+    vidb <文件名>
+    ```
 
 # 快捷键说明
 
