@@ -36,11 +36,11 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
   - Oracle Instant Client (must have sqlplus configured)
   - Vim 7.4+(Vim 8.2 or above is recommended. Vim 7.4 has some functional limitations.)
 ## Steps
-1. Place oracle_tui.tar in the installation user's $HOME directory.
-2. Extract the file: tar xvf oracle_tui.tar.
-3. Modify the profile by adding the following environment variables.  
+1. Change to the directory where the install.sh file is located.  
+   sh ./install.sh  
+4. Modify the profile by adding the following environment variables.  
        export PATH=$PATH:$HOME/oracle_tui:.
-4. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8.  
+5. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8.  
    If not, please set the following variables:   
    export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"    
    export TUI_LC_CTYPE=en_US.UTF-8  
@@ -70,6 +70,9 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 
     If this alias is set, typing vidb will automatically connect to the database.    
 10. Source the profile to apply the changes: (e.g., . ~/.profile).
+11. Install help files (optional)  
+    vim  
+    :helptags ~/.vim/doc  
 
 # Startup Steps
 1. Set the terminal encoding to UTF-8.
