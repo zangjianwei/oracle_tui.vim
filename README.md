@@ -1,3 +1,6 @@
+# oracle_tui.vim
+
+[English](https://github.com/zangjianwei/oracle_tui.vim) | [中文](https://github.com/zangjianwei/oracle_tui.vim/tree/zh-CN)
 # Introduction  
 A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience of GUI applications. Powered by SQL*Plus for SQL execution, it offers spreadsheet-like data manipulation in tabular format—edit data as easily as in Excel, with automatic alignment upon modification. Additional capabilities include execution plan analysis, table structure viewing, DDL extraction for database objects, transaction control, LOB field editing, smart autocompletion (with mid-string matching support), and sticky column headers for seamless navigation.
 ![Screenshot](https://raw.githubusercontent.com/zangjianwei/oracle_tui.vim/master/images/oracle_tui_en.gif)
