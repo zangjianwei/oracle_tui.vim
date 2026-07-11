@@ -220,7 +220,7 @@ Oracle TUI 提供三种窗口模式：
   命令                 功能  
   -------------------- --------------------------
   :Crtsql              根据当前数据文件生成 SQL 
-  :Filter /match_str   过滤当前列符合条件的内容  查询窗口     
+  :Filter /match_str   过滤当前列符合条件的内容     
 
 5.3 数据修改窗口                           *oracle_tui-keys-edit*
 
