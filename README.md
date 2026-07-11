@@ -50,23 +50,34 @@
 2. 解压文件：`tar xvf oracle_tui.tar`。
 3. 在 profile 文件中添加以下环境变量：  
     export PATH=$PATH:$HOME/oracle_tui:.
-5. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。如果没有，在 profile 文件中添加以下环境变量（请根据你的 [语言]_[地区] 设置选择）：  
-    export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"  
-    export TUI_LC_CTYPE=en_US.UTF-8  
-6. 设置文件编码为 UTF-8。在 `~/.vimrc` 或你自己的 `.vimrc` 文件中添加以下配置：  
+5. 检查 `NLS_LANG` 和 `LC_CTYPE` 环境变量是否设置为 UTF-8。  
+     如果不是请设置下面变量  
+     export NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"    
+     export LC_CTYPE=zh_CN.UTF-8  
+
+     如果你不想修改上面环境变量的值,请设置下面环境变量  
+     export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"  
+     export TUI_LC_CTYPE=zh_CN.UTF-8  
+     (请选择正确的[语言]_[地区])  
+7. 设置文件编码为 UTF-8。在 `~/.vimrc` 或你自己的 `.vimrc` 文件中添加以下配置：  
     set encoding=utf-8  
     set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1  
     set termencoding=utf-8  
-7. 在 profile 文件中添加 `DBUSER` 和 `DBPASS` 环境变量（可选）：  
+8. 在 profile 文件中添加 `DBUSER` 和 `DBPASS` 环境变量（可选）：  
     export DBUSER=user  
     export DBPASS=pass  
 如果设置了这些变量，工具将自动使用它们登录；否则会提示手动输入用户名和密码。  
-8. 在 profile 文件中设置别名（可选）：  
-    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'  
+9. 在 profile 文件中设置别名（可选）：  
+    alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'
+   
     或  
-    alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'  
+    alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'
+   
+    或者指定文件编码格式(不用在.vimrc指定文件编码格式)  
+    alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'
+   
     设置别名后，输入 `vidb` 即可自动连接数据库。  
-9. 使 profile 生效（例如：`. ~/.profile`）。  
+11. 使 profile 生效（例如：`. ~/.profile`）。  
 
 # 启动步骤
 
@@ -98,7 +109,7 @@
 | Ctrl+→         | 跳转到右侧窗口                                                   |
 | Ctrl+←         | 跳转到左侧窗口                                                   |
 | Ctrl+n         | 对象名自动补全（仅前缀匹配，插入模式）                           |
-| Ctrl+k         | 表名自动补全（支持非前缀匹配，插入或普通模式）                   |
+| Ctrl+k         | 表名自动补全（支持非前缀匹配，插入或普通模式）<br> 弹出窗口中 F9 和 F10 可用  |
 | gt             | 切换标签页                                                       |
 | :Tablist       | 显示表名及注释                                                   |
 | :Seelock       | 查看锁                                                           |
@@ -127,7 +138,8 @@
 | TAB        | 跳转到下一个字段                         |
 | Ctrl+t     | 跳转到上一个字段                         |
 | F11        | 显示当前 SQL 语句                        |
-| Crtsql     | 根据当前数据文件生成 SQL                 |
+| :Crtsql    | 根据当前数据文件生成 SQL                 |
+| :Filter /match_str|   过滤当前列符合条件的内容|
 | Ctrl+X     | 缩短列长度                               |
 | \x         | 剪切当前列                               |
 | \p         | 将剪切列粘贴到当前列之后                 |
@@ -163,6 +175,8 @@
 
 - 数据修改窗口不支持修改包含 LONG 或 LONG RAW 类型的字段。
 - AIX 系统上 Vim 9 存在 list 处理 bug，因此 AIX 上不能使用 Vim 9。
+- Vim 7.4 的限制  
+  在数据修改窗口不能执行zl,zh,zL,zH命令,修改时制表符会显示为^F,不能垂直分割窗口
 
 ## 作者
 
