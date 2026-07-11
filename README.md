@@ -41,11 +41,11 @@ A fully-featured, native UNIX/Linux Vim Oracle client that rivals the experience
 4. Modify the profile by adding the following environment variables.  
        export PATH=$PATH:$HOME/oracle_tui:.
 5. Check whether your NLS_LANG and LC_CTYPE environment variables are set to UTF-8.  
-   If not, please set the following variables:   
+   If not, please set the following variables in profile:   
    export TUI_NLS_LANG="AMERICAN_AMERICA.AL32UTF8"    
    export TUI_LC_CTYPE=en_US.UTF-8  
 
-   If you prefer not to modify the above environment variables, you can set the following alternative variables instead (the plugin will prioritize these):  
+   If you prefer not to modify the above environment variables, you can set the following alternative variables instead (the plugin will prioritize these) in profile:  
    export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"  
    export TUI_LC_CTYPE=zh_CN.UTF-8  
    (Please select your [language]_[territory] setting)   
