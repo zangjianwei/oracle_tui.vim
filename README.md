@@ -194,4 +194,4 @@ NOTE：Before starting, please set the terminal encoding to UTF-8
 **zangjianwei**
 
 - GitHub: [@zangjianwei](https://github.com/zangjianwei)
-- Email: [zangjianwei35@gmail.com](mailto:zangjianwei35@gmail.com)
+- Email: [1306925940@qq.com](mailto:1306925940@qq.com)
