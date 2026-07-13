@@ -1,3 +1,38 @@
+"==============================================================================
+" oracle_tui.vim - A native Vim-based Oracle client for UNIX/Linux
+"==============================================================================
+"
+" Description:  A lightweight Oracle database client inside Vim that rivals
+"               GUI tools. Provides spreadsheet-like data editing via SQL*Plus,
+"               with transaction enforcement, LOB support, smart autocompletion,
+"               and sticky headers. Perfect for SSH/terminal environments.
+"
+" Maintainer:   zangjianwei <zangjianwei35@gmail.com>
+" Repository:   https://github.com/zangjianwei/oracle_tui.vim
+" License:      MIT (See LICENSE file for details)
+" Version:      1.01
+" Last Change:  2026-07-10
+"
+" Supported Vim: 7.4+ (Vim 8.2 or above is recommended)
+" Supported OS:   UNIX/Linux
+" Copyright:    Copyright (C) 1999-2005 Charles E. Campbell, Jr. {{{1
+"               Permission is hereby granted to use and distribute this code,
+"               with or without modifications, provided that this copyright
+"               notice is copied with it. Like anything else that's free,
+"               Align.vim is provided *as is* and comes with no warranty
+"               of any kind, either expressed or implied. By using this
+"               plugin, you agree that in no event will the copyright
+"               holder be liable for any damages resulting from the use
+"               of this software.
+"
+" Usage:
+"   :Connect              - Connect to Oracle using DBUSER/DBPASS env vars
+"   :Connect -u           - Force manual username/password prompt
+"   F8                    - Execute SQL (selection or current line)
+"   F12                   - Commit data changes in modification window
+"   See documentation for full keybindings.
+"
+"==============================================================================
 let s:save_cpo = &cpo
 set cpo&vim
 
@@ -128,6 +163,8 @@ function! oracle_tui_start#ConnectDB(...)
 		call oracle_tui#ShowErr(output)
 		return
 	endif
+
+	let w:main_window_flag = 1
 
 	"set paste will make imap mappings ineffective
 	set nopaste

@@ -1,3 +1,38 @@
+"==============================================================================
+" oracle_tui.vim - A native Vim-based Oracle client for UNIX/Linux
+"==============================================================================
+"
+" Description:  A lightweight Oracle database client inside Vim that rivals
+"               GUI tools. Provides spreadsheet-like data editing via SQL*Plus,
+"               with transaction enforcement, LOB support, smart autocompletion,
+"               and sticky headers. Perfect for SSH/terminal environments.
+"
+" Maintainer:   zangjianwei <zangjianwei35@gmail.com>
+" Repository:   https://github.com/zangjianwei/oracle_tui.vim
+" License:      MIT (See LICENSE file for details)
+" Version:      1.01
+" Last Change:  2026-07-10
+"
+" Supported Vim: 7.4+ (Vim 8.2 or above is recommended)
+" Supported OS:   UNIX/Linux
+" Copyright:    Copyright (C) 1999-2005 Charles E. Campbell, Jr. {{{1
+"               Permission is hereby granted to use and distribute this code,
+"               with or without modifications, provided that this copyright
+"               notice is copied with it. Like anything else that's free,
+"               Align.vim is provided *as is* and comes with no warranty
+"               of any kind, either expressed or implied. By using this
+"               plugin, you agree that in no event will the copyright
+"               holder be liable for any damages resulting from the use
+"               of this software.
+"
+" Usage:
+"   :Connect              - Connect to Oracle using DBUSER/DBPASS env vars
+"   :Connect -u           - Force manual username/password prompt
+"   F8                    - Execute SQL (selection or current line)
+"   F12                   - Commit data changes in modification window
+"   See documentation for full keybindings.
+"
+"==============================================================================
 let s:save_cpo = &cpo
 set cpo&vim
 
@@ -506,6 +541,7 @@ function! oracle_tui#Tablist(...)
 	endif
 	setlocal laststatus=2
 	setlocal statusline=%{g:prompt_str}
+	setlocal nowrap
 
 	"call add(s:head_update_buffers, bufnr('%'))
 	set buftype=nofile
@@ -1696,6 +1732,84 @@ func! oracle_tui#ColSort(sort_flag, data_type)
 
 	call cursor(3, vir_col-1)
 endfunc
+
+func! oracle_tui#Filter(str)
+	if a:str == ''
+		call oracle_tui#ShowErr("Usage:Filter /str")
+		return 
+	endif
+
+	if strpart(a:str, 0, 1) != '/'
+		call oracle_tui#ShowErr("Usage:Filter /str")
+		return 
+	endif
+
+    let l:vir_col = virtcol('.')
+    let l:separator_text = getline(3)
+    
+    " 获取字段边界
+    let l:boundary = oracle_tui#GetFieldBoundaries(l:separator_text, l:vir_col)
+    if empty(l:boundary)
+        return
+    endif
+
+	let second_line = getline(2)
+
+	let first_char = strpart(second_line, boundary.start-1, 1) 
+
+	if first_char == ' '
+		let type = 1 "数字
+	else
+		let type = 2 "非数字
+	endif
+
+    let l:end_line = line('$')
+	let match_list = []
+    " 查找第一个空行
+	let find_flag = 0
+    for l:i in range(4, line('$'))
+        if getline(l:i) == ''
+            let l:end_line = l:i - 1
+            break
+        endif
+
+		let line_str = getline(l:i)
+        let column_str = oracle_tui#GetVColRange(line_str, boundary.start-1, boundary.end)
+		let column_str = substitute(column_str, " *$", "", "g")
+		if type == 1
+			let column_str = substitute(column_str, "^ *", "", "g")
+		endif
+
+		let match_str = strpart(a:str, 1)
+
+		if column_str =~# match_str
+			let find_flag = 1
+			call add(match_list, line_str)
+		endif
+    endfor
+	
+	if find_flag == 0
+		call oracle_tui#ShowErr("该列不包含:".match_str)
+		return 
+	endif
+
+	silent execute "4 , ".end_line." d"
+
+	call append(3, match_list)
+
+	call cursor(3, vir_col-1)
+endfunc
+
+function! oracle_tui#GetVColRange(str, start_pos, end_pos)
+    "let pos = match(a:str, '\%>' . a:end_pos . 'v.*')
+	"let before_str = strpart(a:str, 0, pos)
+
+    let before_str = substitute(a:str, '\%>' . a:end_pos . 'v.*', "", "g")
+    
+    let result = matchstr(before_str, '\%>' . a:start_pos . 'v.*')
+    
+    return result
+endfunction
 
 function! oracle_tui#Hid()
 	setlocal syntax=csv
@@ -2906,7 +3020,7 @@ function! oracle_tui#PipeFieldEdit()
     
 	let g:prompt_str = "Ctrl+a:Save changes  q:Discard changes"
 	setlocal laststatus=2
-	setlocal statusline=%{g:prompt_str}\ %=%l,%c-%v\ %{&encoding} 
+	setlocal statusline=%{g:prompt_str}\ %=%l,%c-%v\ %{&fileencoding} 
 	if (s:field_types[current_field] == 112 ||
 	  	\ s:field_types[current_field] == 8 ||
 	  	\ s:field_types[current_field] == 113 ||
@@ -3234,16 +3348,19 @@ function! oracle_tui#CheckMainCommand() abort
     let type = getcmdtype()
 
     if type == ':' && (cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*wq'||cmd =~# '^[ \t]*x')
-        if oracle_tui#CheckIfCommit()
-            let modified_cmd = ":call oracle_tui#ShowErr('Cannot exit with uncommitted transactions.Press F2/F6 to rollback or commit')"
-			"feedkeys does not work properly in Vim version 7.2
-        	"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
-        	return "\<C-U>" . modified_cmd . "\<CR>"
-        endif
+		if exists('w:main_window_flag') && w:main_window_flag == 1
+        	if oracle_tui#CheckIfCommit()
+        	    let modified_cmd = ":call oracle_tui#ShowErr('Cannot exit with uncommitted transactions.Press F2/F6 to rollback or commit')"
+				"feedkeys does not work properly in Vim version 7.2
+        		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
+        		return "\<C-U>" . modified_cmd . "\<CR>"
+        	endif
+		endif
     endif
 
     if type == ':' 
-		if tabpagenr('$') > 1 || winnr('$') > 1
+		if (tabpagenr('$') > 1 || winnr('$') > 1) && 
+			\ exists('w:main_window_flag') && w:main_window_flag == 1
 			if cmd =~# '^[ \t]*q[ \t]*$'
         	    let modified_cmd = 'qall'
         		return "\<C-U>" . modified_cmd . "\<CR>"
@@ -3642,6 +3759,21 @@ function! oracle_tui#GetCurrentChar()
 	return char
 endfunction
 
+function! oracle_tui#Replace_r()
+	let l:current_char = oracle_tui#GetCurrentChar()
+
+	if l:current_char == ''
+		call oracle_tui#ShowErr("不能修改分隔符")
+		return ''
+	endif
+
+	if  strwidth(l:current_char) > 1
+		return 'R'
+	else
+		return 'r'
+	endif
+endfunction
+
 " Define a function: Jump to the previous field.
 function! oracle_tui#JumpToPrevField()
     " Get the current line number
@@ -3730,6 +3862,7 @@ function! oracle_tui#DBViewHelp()
 	echo "| Ctrl+↓ : Sort by current column desc                               |"
 	echo "| Ctrl+→ : Jump to right window         Ctrl+← : Jump to left window |"
 	echo "| :Crtsql: Generate SQL based on current data file                   |"
+	echo "| :Filter /match_str: Filter the current column by condition         |"
 	echo "| Ctrl+x : shorten column length                                     |"
 	echo "| \\x : Cut the current column                                        |"
 	echo "| \\p : Paste the cut column after the current column                 |"
@@ -3778,6 +3911,7 @@ function! oracle_tui#SetMapView()
 	command! ShowSql call oracle_tui#ShowSql()
 	command! Crtsql call oracle_tui#Crtsql()
 	command! DBViewHelp call oracle_tui#DBViewHelp()
+	command! -nargs=* Filter call oracle_tui#Filter(<q-args>)
 
 	nnoremap <silent> <buffer> J 15j
 	nnoremap <silent> <buffer> K 15k
@@ -3923,7 +4057,7 @@ function! oracle_tui#SetMapUpdate()
 
 	call oracle_tui#ProtectFirstLine()
 
-	nnoremap <buffer> <silent> r  R
+	nnoremap <buffer> <silent> <expr> r oracle_tui#Replace_r()
 	"noremap <buffer> <silent>  <expr> \cl line('.') > 1 ? ':ClearCont' : ''
 	nnoremap <buffer> <silent> <Tab> :JumpNextColumn<CR>
 	inoremap <buffer> <silent> <Tab> :call oracle_tui#EditColumnAfter2()<CR>
@@ -4056,7 +4190,7 @@ function! oracle_tui#SetAutocmdView()
 	augroup DBView
 		autocmd!
 		au VimEnter <buffer> echo "[/{ Move left [/} right j/J down k/K up F1 for help"
-		au VimEnter <buffer> setlocal statusline=%{&encoding}\ %=%l/%L\ %c-%v\ %p%%
+		au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
 		"After executing :e, the cursor jumps to the first line. 
 		"Use the following method to solve this problem.
 		autocmd BufReadPost <buffer> call feedkeys("lh", 'n')
@@ -4080,7 +4214,7 @@ function! oracle_tui#SetAutocmdUpdate()
 		else
 			au VimEnter <buffer> echo "F1 for help"
 		endif
-		au VimEnter <buffer> setlocal statusline=%{&encoding}\ %=%l/%L\ %c-%v\ %p%%
+		au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
 
 		autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReadColumn()
 		autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReShowNullChar() 

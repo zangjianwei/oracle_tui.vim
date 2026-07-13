@@ -1,330 +1,348 @@
-"vim: encoding=utf-8
-*oracle_tui*  Oracle TUI - 轻量级 Oracle 数据库客户端 for Vim
+*oracle_tui*  Oracle TUI - Lightweight Oracle Database Client for Vim
 
-Authors:  臧建伟
+Authors:  Zang Jianwei
 Version:  1.0
 Last Modified: 2026-07-10
 
 ==============================================================================
-目录                                            *oracle_tui-content*
-    1. 简介.....................................|oracle_tui-introduction|
-    2. 安装.....................................|oracle_tui-install|
-    3. 启动.....................................|oracle_tui-start|
-    4. 窗口模式.................................|oracle_tui-windows|
-    5. 快捷键速查...............................|oracle_tui-keybindings|
-    6. 安全机制.................................|oracle_tui-security|
-    7. 限制.....................................|oracle_tui-limitations|
-    8. 常见问题.................................|oracle_tui-faq|
-    9. 命令汇总.................................|oracle_tui-commands|
-    10. 环境变量................................|oracle_tui-env|
-    11. 更新日志................................|oracle_tui-changelog|
-    12. 作者与许可..............................|oracle_tui-author|
-
-1. 简介                                      *oracle_tui-introduction*
-
-Oracle TUI 是一个轻量级、基于终端的 Oracle UNIX/Linux 数据库管理客户端，
-专为 Vim 打造。功能丰富，提供媲美 GUI 工具的数据编辑体验。
-
-特性：
-- 极速连接：支持环境变量自动登录，一行命令直达数据库
-- 表格化编辑：像 Excel 一样在 Vim 中编辑数据 (SELECT ... FOR UPDATE)
-- 键盘流操作：F8 执行 SQL，F12 提交数据修改
-- 安全机制：退出 Vim 时若有未提交事务，强制拦截报错
-- 智能补全：支持表名(支持非开头字符串)自动补全
-- 多语句支持：支持 PL/SQL 块执行，结果分离展示
-- 三种窗口模式：SQL执行窗口、查询窗口、数据修改窗口
+Table of Contents                              *oracle_tui-content*
+    1. Introduction............................|oracle_tui-introduction|
+    2. Installation............................|oracle_tui-install|
+    3. Startup.................................|oracle_tui-start|
+    4. Window Modes............................|oracle_tui-windows|
+    5. Keybindings Quick Reference.............|oracle_tui-keybindings|
+    6. Security Mechanisms.....................|oracle_tui-security|
+    7. Limitations.............................|oracle_tui-limitations|
+    8. FAQ.....................................|oracle_tui-faq|
+    9. Command Summary.........................|oracle_tui-commands|
+    10. Environment Variables..................|oracle_tui-env|
+    11. Changelog..............................|oracle_tui-changelog|
+    12. Author and License.....................|oracle_tui-author|
 
 ==============================================================================
-2. 安装                                      *oracle_tui-install*
+1. Introduction                              *oracle_tui-introduction*
 
-2.1 依赖                                    *oracle_tui-deps*
-- Linux/Unix 环境
-- Oracle Instant Client(需配置 sqlplus)
-- Vim 7.4 及以上版本，推荐 8.2 及以上版本
+Oracle TUI is a lightweight, terminal-based Oracle UNIX/Linux database
+management client built for Vim. Packed with features, it provides a data
+editing experience comparable to GUI tools.
 
-2.2 安装步骤                                *oracle_tui-setup*
-
-1. 将 oracle_tui.tar 放在安装用户的 $HOME 目录下：
-  tar xvf oracle_tui.tar
-
-2. 修改 profile，添加 PATH：
-  export PATH=$PATH:$HOME/oracle_tui:.
-
-3. 检查 NLS_LANG 和 LC_CTYPE 环境变量是否为 UTF-8：
-  如果不是请设置下面变量
-  export NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"
-  export LC_CTYPE=zh_CN.UTF-8
-
-  如果你不想修改上面环境变量的值,请设置下面环境变量
-  export TUI_NLS_LANG="SIMPLIFIED CHINESE_CHINA.AL32UTF8"
-  export TUI_LC_CTYPE=zh_CN.UTF-8
-
-4. 在 ~/.vimrc 或你自己的 .vimrc 中设置文件编码：
-  set encoding=utf-8
-  set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1
-  set termencoding=utf-8
-
-5. 设置 DBUSER 和 DBPASS 环境变量(可选，用于自动登录)：
-  export DBUSER=your_username
-  export DBPASS=your_password
-
-6. 设置别名(可选,用于自动连接数据库)：
-  alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'
-
-  或指定 vimrc
-  alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'
-
-  或者指定文件编码格式(不用在.vimrc指定文件编码格式)
-  alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'
-
-7. 安装帮助文件(可选)
-  vim
-  :helptags ~/.vim/doc
-
-8. 使 profile 生效：
-  . ~/.bash_profile
-  或
-  . ~/.profile
+Features:
+- Lightning-fast Connection: Supports auto-login via environment variables,
+  connect to your database with a single command
+- Spreadsheet-like Editing: Edit data in Vim just like Excel
+  (SELECT ... FOR UPDATE)
+- Keyboard-Centric Workflow: F8 to execute SQL, F12 to submit data changes
+- Safety Mechanisms: Forces an error and intercepts exit if there are
+  uncommitted transactions when quitting Vim
+- Smart Completion: Supports table name auto-completion (including
+  non-prefix strings)
+- Multi-Statement Support: Supports PL/SQL block execution with separated
+  result displays
+- Three Window Modes: SQL Execution Window, Query Window, Data Modification
+  Window
 
 ==============================================================================
-3. 启动                                      *oracle_tui-start*
+2. Installation                              *oracle_tui-install*
 
-3.1 终端设置
+2.1 Dependencies                            *oracle_tui-deps*
+- Linux/Unix environment
+- Oracle Instant Client (with sqlplus configured)
+- Vim 7.4 or higher, Vim 8.2 or higher recommended
 
-启动前请确保终端设置为 UTF-8 编码。
+2.2 Setup Steps                             *oracle_tui-setup*
 
-3.2 启动方法
+1. Place oracle_tui.tar in the installation user's $HOME directory:
+   tar xvf oracle_tui.tar
 
-方法1：在 Vim 中手动连接
+2. Modify profile, add PATH:
+   export PATH=$PATH:$HOME/oracle_tui:.
+
+3. Check if NLS_LANG and LC_CTYPE environment variables are UTF-8.
+   If not, set the following variables:
+   export NLS_LANG=AMERICAN_AMERICA.AL32UTF8
+   export LC_CTYPE=en_US.UTF-8
+
+   If you prefer not to modify the above environment variables, set these
+   instead:
+   export TUI_NLS_LANG=AMERICAN_AMERICA.AL32UTF8
+   export TUI_LC_CTYPE=en_US.UTF-8
+
+   Note:Please select the correct [language]_[region]
+4. Set file encoding in ~/.vimrc or your own .vimrc:
+   set encoding=utf-8
+   set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1
+   set termencoding=utf-8
+
+5. Set DBUSER and DBPASS environment variables (optional, for auto-login):
+   export DBUSER=your_username
+   export DBPASS=your_password
+
+6. Set alias (optional, for auto-connecting to database):
+   alias vidb='vim -c "call oracle_tui_start#ConnectDB()"'
+
+   Or specify vimrc:
+   alias vidb='vim -u /path/to/your/.vimrc -c "call oracle_tui_start#ConnectDB()"'
+
+   Or specify file encoding (no need to set encoding in .vimrc):
+   alias vidb='vim --cmd "set encoding=utf-8|set fileencodings=ucs-bom,utf-8,gb18030,gbk,gb2312,cp936,latin1|set termencoding=utf-8" -c "call oracle_tui_start#ConnectDB()"'
+
+7. Install help file (optional):
+   vim
+   :helptags ~/.vim/doc
+
+8. Source profile:
+   . ~/.bash_profile
+   or
+   . ~/.profile
+
+==============================================================================
+3. Startup                                   *oracle_tui-start*
+
+3.1 Terminal Settings
+
+Make sure your terminal is set to UTF-8 encoding before starting.
+
+3.2 Startup Methods
+
+Method 1: Connect manually in Vim
   :Connect
-- 如果设置了 DBUSER、DBPASS 环境变量，则自动登录
-- 否则提示输入用户名和口令
+- If DBUSER and DBPASS environment variables are set, auto-login is performed
+- Otherwise, you will be prompted for username and password
 
-强制手动输入用户名和口令：
+Force manual username and password entry:
   :Connect -u
 
-方法2：使用别名自动启动
+Method 2: Start with alias
   vidb <filename>
 
-- 启动成功后窗口快捷键才能生效
-
-
-==============================================================================
-4. 窗口模式                                  *oracle_tui-windows*
-
-Oracle TUI 提供三种窗口模式：
-
-4.1 SQL 语句执行窗口                       *oracle_tui-window-sql*
-    进入 Vim 时的默认窗口。
-    在此窗口中编写和执行 SQL 语句。
-    - 对象导航
-    - 自动补全
-    - 查看对象定义
-    - 查看执行计划
-
-4.2 查询窗口                               *oracle_tui-window-query*
-    执行单条 SELECT 语句时进入。
-    - 标题行固定
-    - 标题行能完整显示列名称，解决 sqlplus 不能完整显示列名称的问题
-    - 列排序
-    - 缩短、移动、剪切列
-    - 列内过滤数据
-    - 列求和
-
-4.3 数据修改窗口                           *oracle_tui-window-edit*
-    执行 SELECT ... FOR UPDATE 语句时进入。
-    - 表格化编辑
-    - 标题行固定
-    - 修改数据(插入、删除、修改、替换)时自动对齐
-    - 数字类型字段右对齐
-    - VARCHAR2 字段能识别尾部输入的空格
-    - CLOB/BLOB 字段：每个字段生成一个文件并展示文件名
-    - 替换操作不会替换标题行和 CLOB/BLOB 字段对应的文件名
-    - DATE/TIMESTAMP 字段：光标移动到该字段时自动提示输入格式
-    - CLOB/BLOB 字段：光标移动到该字段时自动提示按 Ctrl+A 编辑
+- Keyboard shortcuts become active only after successful connection
 
 ==============================================================================
-5. 快捷键速查                                *oracle_tui-keybindings*
+4. Window Modes                              *oracle_tui-windows*
 
-5.1 SQL 语句执行窗口                       *oracle_tui-keys-sql*
+Oracle TUI provides three window modes:
 
-   键位     功能                                         
-   ------   --------                                          
-   F1       显示帮助                                          
-   F8       执行 SQL(Visual 模式执行选中行,Normal 模式执行当前行)
-   Ctrl+C   中断正在执行的操作                                
-   F2       回滚事务                                          
-   F6       提交事务                                          
-   F4       查看是否有未提交事务                              
-   F5       查看 SQL 执行计划                                 
-   F7       列出数据库对象                                    
-            弹出的窗口可按F9,F10
-   F9       显示光标所在表名对应的表结构说明                  
-   F10      显示光标所在单词对应的创建数据库对象语句          
-   -        缩小当前窗口宽度                                  
-   =        增加当前窗口宽度                                  
-   Shift+-  缩小当前窗口高度                                  
-   Shift+=  增加当前窗口高度                                  
-   Ctrl+↑   跳到上面窗口                                      
-   Ctrl+↓   跳到下面窗口                                      
-   Ctrl+→   跳到右面窗口                                      
-   Ctrl+←   跳到左面窗口                                      
-   Ctrl+n   对象名自动补齐(开头字符串匹配，插入模式)          
-   Ctrl+k   表名自动补齐(支持中间字符串匹配，插入/普通模式) 
-            弹出的窗口可按F9,F10
-   gt       在标签页之间切换                                
+4.1 SQL Execution Window                   *oracle_tui-window-sql*
+    The default window when entering Vim.
+    Write and execute SQL statements in this window.
+    - Execute SQL
+    - Object navigation
+    - Auto-completion
+    - View object definitions
+    - View execution plans
 
-5.1.1 SQL 执行窗口命令                    *oracle_tui-commands-sql*
+4.2 Query Window                           *oracle_tui-window-query*
+    Entered when executing a single SELECT statement.
+    - Fixed header row
+    - Full column headers display, overcoming sqlplus truncation limits
+    - Column sorting
+    - Shorten, move, and cut columns
+    - Filter data within columns
+    - Column summation
 
-  命令                     功能                  
-  ------------------------ ------------------------
-  :Tablist                 查看表名及说明        
-  :Seelock                 查看锁                
-  :Unlock <sid> <serial>   解锁                  
-  :Tabused                 查看每个表占用空间情况
-  :Tabspace                查看表空间使用情况    
-  :Nowsql                  查看当前正在运行的 SQL
+4.3 Data Modification Window               *oracle_tui-window-edit*
+    Entered when executing SELECT ... FOR UPDATE.
+    - Spreadsheet-style editing
+    - Fixed header row
+    - Auto-alignment during insert/delete/modify/replace operations
+    - Numeric fields are right-aligned
+    - VARCHAR2 fields intelligently recognize trailing spaces
+    - CLOB/BLOB fields: generates a file for each field and displays filename
+    - Replacement operations preserve headers and CLOB/BLOB filenames
+    - DATE/TIMESTAMP fields: auto-prompt for input format when cursor lands
+    - CLOB/BLOB fields: auto-prompt for Ctrl+A to edit
 
-5.2 查询窗口                               *oracle_tui-keys-query*
+==============================================================================
+5. Keybindings Quick Reference               *oracle_tui-keybindings*
 
-   键位       功能                      
+5.1 SQL Execution Window                   *oracle_tui-keys-sql*
+
+   Key       Function
+   ------    --------
+   F1        Show help
+   F8        Execute SQL (Visual mode executes selection, Normal mode
+             executes current line)
+   Ctrl+C    Interrupt current operation
+   F2        Rollback transaction
+   F6        Commit transaction
+   F4        Check for uncommitted transactions
+   F5        View SQL execution plan
+   F7        List database objects
+             F9 and F10 work in the popup window
+   F9        Show table structure description for the table under cursor
+   F10       Show DDL statement for the object under cursor
+   -         Decrease current window width
+   =         Increase current window width
+   Shift+-   Decrease current window height
+   Shift+=   Increase current window height
+   Ctrl+↑    Jump to upper window
+   Ctrl+↓    Jump to lower window
+   Ctrl+→    Jump to right window
+   Ctrl+←    Jump to left window
+   Ctrl+n    Object name auto-complete (prefix match, Insert mode)
+   Ctrl+k    Table name auto-complete (supports middle-string match,
+             Insert/Normal mode)
+             F9 and F10 work in the popup window
+   gt        Switch between tabs
+
+5.1.1 SQL Execution Window Commands        *oracle_tui-commands-sql*
+
+  Command                   Function
+  ------------------------  -----------------------------------------
+  :Tablist                  View table names and comments
+  :Seelock                  View locks
+  :Unlock <sid> <serial>    Unlock
+  :Tabused                  View space usage per table
+  :Tabspace                 View tablespace usage
+  :Nowsql                   View currently running SQL
+
+5.2 Query Window                           *oracle_tui-keys-query*
+
+   Key        Function
    ------     -------------------------------
-   [          左移                      
-   ]          右移                      
-   {          左快移                    
-   }          右快移                    
-   j          下移                      
-   k          上移                      
-   J          下快移                    
-   K          上快移                    
-   /          查询                      
-   F3         冻结/解冻标题行           
-   TAB        跳到下一个字段            
-   Ctrl+t     跳到上一个字段            
-   Ctrl+↑     对当前列正向排序          
-   Ctrl+↓     对当前列反向排序          
-   Ctrl+→     跳到右面窗口              
-   Ctrl+←     跳到左面窗口              
-   -          缩小当前窗口宽度          
-   =          增加当前窗口宽度          
-   F11        显示当前 SQL 语句         
-   wv         垂直分割窗口              
-   Ctrl+X     缩短列长度                
-   \x         剪切当前列                
-   \p         粘贴剪切的列到当前列后面  
-   Ctrl+\     对选中的列中的数字进行求和
-   F1         显示帮助                  
+   [          Move left
+   ]          Move right
+   {          Fast move left
+   }          Fast move right
+   j          Move down
+   k          Move up
+   J          Fast move down
+   K          Fast move up
+   /          Search
+   F3         Freeze/Unfreeze header row
+   TAB        Jump to next field
+   Ctrl+t     Jump to previous field
+   Ctrl+↑     Sort current column ascending
+   Ctrl+↓     Sort current column descending
+   Ctrl+→     Jump to right window
+   Ctrl+←     Jump to left window
+   -          Decrease current window width
+   =          Increase current window width
+   F11        Show current SQL statement
+   wv         Split window vertically
+   Ctrl+X     Shorten column length
+   \x         Cut current column
+   \p         Paste cut column after current column
+   Ctrl+\     Sum numbers in selected column
+   F1         Show help
 
-5.2.1 查询窗口命令                      *oracle_tui-commands-query*
+5.2.1 Query Window Commands                *oracle_tui-commands-query*
 
-  命令                 功能  
-  -------------------- --------------------------
-  :Crtsql              根据当前数据文件生成 SQL 
-  :Filter /match_str   过滤当前列符合条件的内容  查询窗口     
+  Command                   Function
+  ------------------------  -----------------------------------------
+  :Crtsql                   Generate SQL based on current data file
+  :Filter /match_str        Filter contents in current column that match
 
-5.3 数据修改窗口                           *oracle_tui-keys-edit*
+5.3 Data Modification Window               *oracle_tui-keys-edit*
 
-  键位      功能                                    
-  ------    ----------------------------------------
-  [         左移                                     
-  ]         右移                                     
-  {         左快移                                  
-  }         右快移                                  
-  j         下移                                     
-  k         上移                                     
-  J         下快移                                  
-  K         上快移                                  
-  /         查询                                     
-  Ctrl+→    跳到右面窗口                            
-  Ctrl+←    跳到左面窗口                            
-  -         缩小当前窗口宽度                        
-  =         增加当前窗口宽度                        
-  F12       提交对表数据的修改(不提交事务)          
-  O         当前行上新增一行(普通模式)              
-  o         当前行下新增一行(普通模式)              
-  Ctrl+T    跳入上一列(插入或普通模式)              
-  TAB       跳入下一列(插入或普通模式)              
-  Ctrl+A    打开一个窗口对当前列进行修改(CLOB/BLOB) 
-  F3        冻结/解冻标题行                         
-  Ctrl+n    显示空字符开关                          
-  Ctrl+@    显示修改内容开关                        
-  wv        垂直分割窗口                            
-  F1        显示帮助                                
-
-==============================================================================
-6. 安全机制                                  *oracle_tui-security*
-
-- 退出 Vim 时若有未提交事务，强制拦截报错
-- 数据修改窗口中的替换操作不会替换标题行
-- 替换操作不会替换 CLOB/BLOB 字段对应的文件名
+   Key       Function
+   ------    ----------------------------------------
+   [         Move left
+   ]         Move right
+   {         Fast move left
+   }         Fast move right
+   j         Move down
+   k         Move up
+   J         Fast move down
+   K         Fast move up
+   /         Search
+   Ctrl+→    Jump to right window
+   Ctrl+←    Jump to left window
+   -         Decrease current window width
+   =         Increase current window width
+   F12       Submit table data changes (does not commit transaction)
+   O         Add new row above current line (Normal mode)
+   o         Add new row below current line (Normal mode)
+   Ctrl+T    Jump to previous column (Insert or Normal mode)
+   TAB       Jump to next column (Insert or Normal mode)
+   Ctrl+A    Open a window to edit current column (CLOB/BLOB must)
+   F3        Freeze/Unfreeze header row
+   Ctrl+n    Toggle display of null characters
+   Ctrl+@    Toggle display of diff highlighting
+   wv        Split window vertically
+   F1        Show help
 
 ==============================================================================
-7. 限制                                      *oracle_tui-limitations*
+6. Security Mechanisms                       *oracle_tui-security*
 
-- 不支持含有 LONG、LONG RAW 字段类型的修改
-- AIX Vim 9 版本对 list 处理有 bug，AIX 下不能使用 Vim 9 版本
-- Vim 7.4 的限制 
-  在数据修改窗口不能执行zl,zh,zL,zH命令,修改时制表符会显示为,不能垂直分割窗口
-
-==============================================================================
-8. 常见问题                                  *oracle_tui-faq*
-
-Q: 连接失败？
-A: 请检查 ORACLE_HOME 和 PATH 是否正确设置，确保 sqlplus 可用。
-
-Q: 中文显示乱码？
-A: 检查 encoding, fileencodings, termencoding 正确设置
-   检查 NLS_LANG LC_CTYPE 正确设置
-
-Q: 如何退出数据修改窗口？
-A: 使用 :q 关闭窗口，如有未提交修改会提示。
-
-Q: 补全功能不工作？
-A: 请确保已正确连接数据库，且对象名称存在。
+- Forces an error and intercepts exit if there are uncommitted transactions
+  when quitting Vim
+- Replacement operations in Data Modification Window do not replace header row
+- Replacement operations do not replace CLOB/BLOB filenames
 
 ==============================================================================
-9. 命令汇总                                  *oracle_tui-commands*
+7. Limitations                              *oracle_tui-limitations*
 
-  命令                 功能                      适用窗口     
-  ------------         ------------------------- ---------    
-  :Connect             连接数据库                SQL执行窗口  
-  :Connect -u          强制手动输入用户名口令    SQL执行窗口    
-  :Tablist             查看表名及说明            SQL执行窗口  
-  :Seelock             查看锁                    SQL执行窗口  
-  :Unlock              解锁                      SQL执行窗口  
-  :Tabused             查看每个表占用空间情况    SQL执行窗口  
-  :Tabspace            查看表空间使用情况        SQL执行窗口  
-  :Nowsql              查看当前正在运行的 SQL    SQL执行窗口  
-  :Crtsql              根据当前数据文件生成 SQL  查询窗口     
-  :Filter /match_str   过滤当前列符合条件的内容  查询窗口     
+- Does not support modification of tables with LONG or LONG RAW field types
+- AIX Vim 9 has a bug with list processing; Vim 9 cannot be used on AIX
+- Vim 7.4 limitations:
+  In Data Modification Window:
+  1. Cannot execute zl, zh, zL, zH commands 
+  2. Tab characters display as   during editing
+  3. Cannot split window vertically
 
 ==============================================================================
-10. 环境变量                                 *oracle_tui-env*
+8. FAQ                                       *oracle_tui-faq*
 
-  变量          说明               是否必须  
-  ------------- ------------------ --------- 
-  DBUSER        数据库用户名       可选      
-  DBPASS        数据库密码         可选      
-  TUI_NLS_LANG  NLS 语言设置       推荐      
-  TUI_LC_CTYPE  区域设置           推荐      
-  ORACLE_HOME   Oracle 安装路径    必须      
-  PATH          包含 sqlplus 路径  必须      
+Q: Connection failed?
+A: Check if ORACLE_HOME and PATH are correctly set, and ensure sqlplus is
+   available.
+
+Q: Chinese characters display garbled?
+A: Check that encoding, fileencodings, and termencoding are correctly set.
+   Check that NLS_LANG and LC_CTYPE are correctly set.
+
+Q: How to exit Data Modification Window?
+A: Use :q to close the window. You will be prompted if there are uncommitted
+   changes.
+
+Q: Auto-completion not working?
+A: Ensure you are properly connected to the database and the object name
+   exists.
 
 ==============================================================================
-11. 更新日志                                 *oracle_tui-changelog*
+9. Command Summary                           *oracle_tui-commands*
+
+  Command                   Function                      Applicable Window
+  ------------              ---------------------------  -----------------
+  :Connect                  Connect to database           SQL Execution
+  :Connect -u               Force manual login            SQL Execution
+  :Tablist                  View table names/comments     SQL Execution
+  :Seelock                  View locks                    SQL Execution
+  :Unlock                   Unlock                        SQL Execution
+  :Tabused                  View space usage per table    SQL Execution
+  :Tabspace                 View tablespace usage         SQL Execution
+  :Nowsql                   View currently running SQL    SQL Execution
+  :Crtsql                   Generate SQL from data file   Query Window
+  :Filter /match_str        Filter current column         Query Window
+
+==============================================================================
+10. Environment Variables                      *oracle_tui-env*
+
+  Variable      Description                   Required
+  ------------  ----------------------------  ---------
+  DBUSER        Database username             Optional
+  DBPASS        Database password             Optional
+  TUI_NLS_LANG  NLS language setting          Recommended
+  TUI_LC_CTYPE  Locale setting                Recommended
+  ORACLE_HOME   Oracle installation path      Required
+  PATH          Must include sqlplus path     Required
+
+==============================================================================
+11. Changelog                                 *oracle_tui-changelog*
 
 v1.0 (2026-07-10)
-- 初始版本发布
-- 支持三种窗口模式
-- 支持表格化数据编辑
-- 支持 CLOB/BLOB 字段编辑
-- 支持智能补全
+- Initial release
+- Supports three window modes
+- Supports spreadsheet-style data editing
+- Supports CLOB/BLOB field editing
+- Supports smart completion
 
 ==============================================================================
-12. 作者与许可                               *oracle_tui-author*
+12. Author and License                        *oracle_tui-author*
 
-作者: 臧建伟
-许可: 请参考软件包中的 LICENSE 文件
+Author: Zang Jianwei
+License: Please refer to the LICENSE file in the software package
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:
