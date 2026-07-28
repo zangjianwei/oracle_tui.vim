@@ -24,7 +24,6 @@
 if [ "$1" = "-h" -o $# -ne 1 -a $# -ne 3 ];then
     echo "Usage:`basename $0` shortfile"
 	shortfile=`basename $1`
-	>~/.dbtmp/$shortfile.err.15
     exit 15
 fi
 
@@ -53,17 +52,16 @@ dir=$HOME/.dbtmp
 shortfile=`basename $1`
 filename=`basename $1`
 newfile=$filename.dif.new
-newfile=`echo $newfile|sed 's/-/_/'`
+#newfile=`echo $newfile|sed 's/-/_/'`
 oldfile=$filename.dif.old
-oldfile=`echo $oldfile|sed 's/-/_/'`
-vimpid=`echo $filename|awk -F- '{print $2}'|sed 's/\.txt.new//'`
-col_len_file=~/.dbtmp/${vimpid}_col.txt
-updatesql_file=$dir/${vimpid}_update.sql
-crttab_file=$dir/${vimpid}_crttab.log
+#oldfile=`echo $oldfile|sed 's/-/_/'`
+vimpid=`echo $filename|awk -F_ '{print $2}'`
+col_len_file=~/.dbtmp/upd_${vimpid}.col
+updatesql_file=$dir/upd_${vimpid}_update.sql
 fgf=""
 cur_pid=$$                  
 SQL_END=SQL_END_$cur_pid    
-browfile=$dir/${vimpid}_updres.txt
+browfile=$dir/upd_${vimpid}.res
 
 ReadPipe()
 {
@@ -89,7 +87,6 @@ CrtSql()
 		-v col_file=$col_len_file \
 		-v aux_file=$aux_file \
 		-v toolong_flag=$toolong_flag \
-		-v lob_file_flag=$lob_file_flag \
 		-v lob_file_dir="$HOME/.dbtmp" \
 		-v errfile=$browfile \
 		'function SetVarByValue(colname, coltype, value, install_file)
@@ -438,10 +435,9 @@ CrtSql()
 					|| arr_col_type[i] ~ /long/) \
 					&& toolong_flag == 1)
 				{
-					if ((arr_col_type[i] ~ /clob/ \
+					if (arr_col_type[i] ~ /clob/ \
 						|| arr_col_type[i] ~ /blob/ \
-						|| arr_col_type[i] ~ /long/) \
-						&& lob_file_flag == 1)
+						|| arr_col_type[i] ~ /long/) 
 					{
 						lob_file = value
 						gsub(" ", "", value)
@@ -544,7 +540,6 @@ CrtSql()
 		rm -f $updatesql_file   
 		rm -f $dir/$newfile
 		rm -f $dir/$oldfile
-		>~/.dbtmp/$shortfile.err.10
 		exit 10
 	fi
 
@@ -560,11 +555,11 @@ CrtSql()
 DiffData()
 {
 	shortfile=$1
-	newfile2=$shortfile.txt.new
-	oldfile2=$shortfile.txt.old
+	newfile2=$shortfile.new
+	oldfile2=$shortfile.old
 
-	newfile2_tmp=$shortfile.txt.new.tmp
-	oldfile2_tmp=$shortfile.txt.old.tmp
+	newfile2_tmp=$shortfile.new.tmp
+	oldfile2_tmp=$shortfile.old.tmp
 
 	sed -n '2,$ p' $dir/$newfile2 > $dir/$newfile2_tmp
 	sed -n '2,$ p' $dir/$oldfile2 > $dir/$oldfile2_tmp
@@ -591,14 +586,15 @@ DiffData $shortfile
 
 if [ $? -eq 0 ];then
 	#Return 3: No changes made.
-	>~/.dbtmp/$shortfile.err.3
 	exit 3
 fi
 
 IFS="
 "
 
-toolong_flag=`awk 'BEGIN{toolong_flag = 0}
+toolong_flag=`awk 'BEGIN{
+		toolong_flag = 0
+	}
 	{ 
 		#If it is of type VARCHAR2 with a length greater than 2900, or if it is of type CLOB, set the toolong_flag.
 		if ($2 == 1 && $3 > 2900 || $2 == 112 || $2 == 8 || $2 == 113 || $2 == 24) 
@@ -613,22 +609,7 @@ toolong_flag=`awk 'BEGIN{toolong_flag = 0}
 		print toolong_flag 
 	}' $col_len_file`
 
-lob_file_flag=0
-
-unit=`echo $filename|sed 's/^p_//'|awk -F- '{print $1}'`
-echo $unit|grep "^c_" > /dev/null 2>&1
-if [ $? -eq 0 ];then
-	lob_file_flag=1
-	unit=`echo $unit|sed 's/^c_//'`
-fi
-
-field_num=`echo $unit|awk -F. '{print NF}'`
-if [ $field_num -eq 2 ];then
-	owner=`echo $unit|awk -F. '{print toupper($1)}'`
-	up_tabname=`echo $unit|awk -F. '{print toupper($2)}'`
-else
-	up_tabname=`echo $unit|awk '{print toupper($1)}'`
-fi
+unit=`echo $filename|sed "s/upd_${vimpid}_//g"`
 
 #setfile=~/.dbtmp/${vimpid}_upd_set.sql  
 pipe_in=$dir/.pipe_in.$vimpid
@@ -636,7 +617,6 @@ pipe_out=$dir/.pipe_out.$vimpid
 sqlplus_pid_file=~/.dbtmp/.sqlplus_pid.$vimpid
 
 if [ ! -p $pipe_in ];then
-	>~/.dbtmp/$shortfile.err.4
 	exit 4
 fi
 
@@ -644,7 +624,6 @@ sqlplus_pid=`cat $sqlplus_pid_file|awk '{print $1}'`
 #pid2=`ps -ef|awk -v pid=$sqlplus_pid '{if ($2 == pid) print $2}'`
 #if [ "$pid2" != "$sqlplus_pid" ];then
 if ! kill -0 $sqlplus_pid 2>/dev/null; then
-	>~/.dbtmp/$shortfile.err.4
 	exit 4
 fi
 
@@ -700,7 +679,6 @@ if [ $sucflag -ne 0 ];then
 	rm -f $dir/$oldfile
 	vim -c "set nonu" $browfile
 	rm -f $browfile
-	>~/.dbtmp/$shortfile.err.11
 	exit 11
 fi
 
@@ -709,10 +687,9 @@ kill -9 $bg_pid   > /dev/null 2>&1
 #No update
 if [ ! -s $updatesql_file ];then
 	rm -f $updatesql_file   
-	#rm -f $dir/col_*.txt
+	#rm -f $dir/upd_*.col
 	rm -f $dir/$newfile
 	rm -f $dir/$oldfile
-	>~/.dbtmp/$shortfile.err.3
 	exit 3
 fi
 
@@ -764,13 +741,8 @@ else
 	retcode=0
 fi
 
-rm -f $crttab_file
 rm -f $browfile
 #rm -f $setfile
 rm -f $updatesql_file   
-
-if [ "$retcode" = "0" ];then
-    >~/.dbtmp/$shortfile.err.0
-fi
 
 exit $retcode

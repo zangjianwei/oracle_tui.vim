@@ -34,6 +34,8 @@
 "
 "==============================================================================
 let s:save_cpo = &cpo
+let s:save_mouse = &mouse
+let s:save_showtabline = &showtabline
 set cpo&vim
 
 "The following line is for loading your own crtdb.txt and should be removed for formal release
@@ -50,6 +52,38 @@ endfun
 func! oracle_tui#SetPassword(value)
     let s:password = a:value
 endfun
+
+function! oracle_tui#InitUpdateWindowVar()
+	let t:update_tab_flag = 1
+
+	let t:show_update_vertical_flag = 0
+	let t:show_update_title_flag = 0
+	let t:show_diff_flag = 0
+	let t:show_nullchar_flag = 0
+
+	let t:current_field_num = 0
+	let t:current_pipe_line = 0
+	let t:original_field_content = ''
+
+	let t:lob_substitute_flag = 0
+
+	let t:prompt_flag = 0
+	let t:cur_field = 0
+
+	let t:field_charset = []
+	let t:field_data_len = []
+	let t:field_widths = []
+	let t:field_types = []
+	let t:field_names = []
+endfunction
+
+function! oracle_tui#InitViewWindowVar()
+	let t:show_view_title_flag = 0
+	let t:show_view_vertical_flag = 0
+
+	let t:start_pos = 0
+	let t:end_pos = 0
+endfunction
 
 function! oracle_tui#ExeSql(mode) range
 	if a:mode == 'v'
@@ -245,8 +279,6 @@ function! oracle_tui#ExeSql(mode) range
 
 	call writefile(sql_list, sql_file)
 	redir END
-	let sql_list = []
-	let sql_list2 = []
 
 	if select_flag == 1 && more_line_flag == 0
 		"There is only one query statement.
@@ -268,14 +300,14 @@ function! oracle_tui#ExeSql(mode) range
 		endif
 
 		"let str=substitute(str, "for[ \t][ \t]*update[ \t]*$",  "", "g")
-		let sql="db_query_update.sh ".pid
+		let cmd="db_query_update.sh ".pid
 		"if exists('s:username') && exists('s:password')
 		"	let sql = sql." ".s:username." ".s:password 
 		"endif
 	else
-		let sql="db_exec_sql.sh ".pid. " ".one_select_flag
+		let cmd="db_exec_sql.sh ".pid. " ".one_select_flag
 		if exists('s:username') && exists('s:password')
-			let sql = sql." ".s:username." ".s:password 
+			let cmd = cmd." ".s:username." ".s:password 
 		endif
 	endif
 
@@ -284,61 +316,235 @@ function! oracle_tui#ExeSql(mode) range
 		"execute "!clear;".sql
 		"Catch exceptions here; otherwise, the shell will be interrupted and subsequent statements will not execute (e.g., redraw!)
 		try
-			sil execute "!clear;".sql
+			sil execute "!".cmd
 		catch 
-			echo "Catch an interrupt"
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+
+				redraw!
+				call oracle_tui#ShowErr('Execution exception:'.v:exception)
+				return
+			endif
 		endtry
+
 		let status = shell_error
     	redraw! "Refresh screen
-		if status == 0
-			echo "Data modify success.Press <F2>/rollback <F6>/commit"
-		elseif status == 1
-			call oracle_tui#ShowErr("Data modification failed!")
-			echo ""
-		elseif status == 3
-			call oracle_tui#ShowMsg("No data has been modified!")
-			echo ""
-		elseif status == 4
-			call oracle_tui#ShowErr("Database connection interrupted!")
-			echo ""
-		elseif status == 10
-			call oracle_tui#ShowErr("AWK syntax error when generating update SQL!")
-			echo ""
-		elseif status == 11
-			call oracle_tui#ShowErr("Error generating update SQL!")
-			echo ""
-		elseif status == 12
-			"call oracle_tui#ShowErr("SQL syntax error!")
-			"echo ""
-			let nouse=1
-		elseif status == 13
-			call oracle_tui#ShowErr("Operation interrupted!")
-			echo ""
-		elseif status == 14
-			"call oracle_tui#ShowErr("Error executing the generated PL/SQL!")
-			"echo ""
-			let nouse=1
-		elseif status == 15
-			call oracle_tui#ShowErr("Command line parameter error!")
-			echo ""
-		elseif status == 100
-			call oracle_tui#ShowMsg("Discard changes!")
-		else
-			call oracle_tui#ShowErr("Exception, unknown return code:".status)
-			echo ""
+		if status != 0
+			redraw!
+			if status == 4
+				call oracle_tui#ShowErr("Database connection interrupted!")
+				echo ""
+			elseif status == 12
+				call oracle_tui#ShowErr("SQL syntax error!")
+				echo ""
+			elseif status == 13
+				call oracle_tui#ShowErr("Operation interrupted!")
+				echo ""
+			elseif status == 14
+				call oracle_tui#ShowErr("Error executing the generated PL/SQL!")
+				echo ""
+			elseif status == 15
+				call oracle_tui#ShowErr("Command line parameter error!")
+				echo ""
+			else
+				call oracle_tui#ShowErr("Exception, unknown return code:".status)
+				echo ""
+			endif
+
+			return
 		endif
+
+    	let update_sql =  join(sql_list, ' ')
+
+		let table_name = matchstr(update_sql, '\cfrom\s\+\zs[a-zA-Z0-9._]\+')
+
+		let result_file = $HOME."/.dbtmp/upd_".pid."_".table_name.".new"
+
+		let g:save_laststatus = &laststatus
+		let g:save_statusline = &statusline
+
+		set showtabline=0
+		try
+			execute ":tabnew ".result_file
+		catch 
+			redraw!
+
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+				call oracle_tui#ShowErr('Exception while opening the result file:'.v:exception)
+			else
+				call oracle_tui#ShowErr("Interrupted while opening the result file!")
+			endif
+			return
+		endtry
+
+		let t:current_update_file = result_file
+		call oracle_tui#InitUpdateWindowVar() 
+		set mouse=
+
+		"tabclose auto rm buffer
+		"set bufhidden=delete
+
+		try
+			call oracle_tui#ReadColumn()
+			call oracle_tui#SaveLobAndSeq()
+			call oracle_tui#SetLocal()
+			call oracle_tui#ShowUpdateTitle()
+			call oracle_tui#SetMapUpdate()
+			call oracle_tui#SetAutocmdUpdate()
+			call oracle_tui#Hid()
+			normal! gg
+		catch 
+			tabclose
+			redraw!
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+				call oracle_tui#ShowErr('Execution exception:'.v:exception)
+			else
+				call oracle_tui#ShowErr("Interrupted while initializing the file!")
+			endif
+			return
+		endtry
+
+		"syn match Comment /<upd_[^>]*_lob_[^>]*\.old>/
+
+		"setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		setlocal statusline=%{&fileencoding}\ show_diff:%{t:show_diff_flag?'on':'off'}\ \ show_nullchar:%{t:show_nullchar_flag?'on':'off'}\ %=%l/%L\ %c-%v\ %p%%
+		setlocal laststatus=2
+
+		setlocal updatetime=500
+		setlocal ttimeoutlen=50
+
+		if v:version >= 800
+			echo "[/{ Move left [/} right j/J down k/K up F1 for help"
+		else
+			echo "F1 for help"
+		endif
+
+		let w:update_window_flag = 1
 	else
 		"Catch exceptions here; otherwise, the shell will be interrupted and subsequent statements will not execute (e.g., redraw!)
 		try
-			sil execute "!clear;".sql
+			sil execute "!".cmd
 		catch 
-			echo "Catch an interrupt"
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+
+				redraw!
+				call oracle_tui#ShowErr('Execution exception:'.v:exception)
+				return
+			endif
 		endtry
-    	redraw! "Refresh screen
+
+		let status = shell_error
+
+		if status != 0
+			redraw!
+			if status == 4
+				call oracle_tui#ShowErr("Database connection interrupted!")
+				echo ""
+			elseif status == 13
+				call oracle_tui#ShowErr("Operation interrupted!")
+				echo ""
+			elseif status == 15
+				call oracle_tui#ShowErr("Command line parameter error!")
+				echo ""
+			else
+				call oracle_tui#ShowErr("Exception, unknown return code:".status)
+				echo ""
+			endif
+
+			return
+		endif
+
+		let g:save_laststatus = &laststatus
+		let g:save_statusline = &statusline
+
+		let result_file = $HOME."/.dbtmp/".pid.".txt"
+		set showtabline=0
+    	if !empty(result_file) && filereadable(result_file)
+			try
+				execute ":tabnew ".result_file
+			catch 
+				redraw!
+
+				if v:exception !~# 'Vim:Interrupt'
+					echom "v:exception=".v:exception 
+					echom "v:errmsg=".v:errmsg
+					echom "v:throwpoint=".v:throwpoint
+					call oracle_tui#ShowErr('Exception while opening the result file:'.v:exception)
+				else
+					call oracle_tui#ShowErr("Interrupted while opening the result file!")
+				endif
+				return
+			endtry
+		else
+			call oracle_tui#ShowErr("Result file [".result_file."] open error!")
+			return
+		endif
+
+		"Without the line below, it will be out of sync with the header row
+		setlocal ve=all
+		normal! gg
+		setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		setlocal laststatus=2
+
+		"tabclose auto rm buffer
+		"set bufhidden=delete
+
+		set mouse=
+
+		call oracle_tui#InitViewWindowVar() 
+		let t:current_result_file = result_file
+		let t:current_sql_file = sql_file
+
+		call oracle_tui#SetLocal()
+    	let separator_text = getline(3)
+		if separator_text =~ "^[ -][ -]*$" && one_select_flag == 1
+			try
+				call oracle_tui#ShowViewTitle()
+				call oracle_tui#SetMapView()
+				call oracle_tui#SetAutocmdView()
+			catch 
+				tabclose
+				redraw!
+
+				if v:exception !~# 'Vim:Interrupt'
+					echom "v:exception=".v:exception 
+					echom "v:errmsg=".v:errmsg
+					echom "v:throwpoint=".v:throwpoint
+					call oracle_tui#ShowErr('Exception while initializing the file:'.v:exception)
+				else
+					call oracle_tui#ShowErr("Interrupted while initializing the file!")
+				endif
+				return
+			endtry
+
+			let t:result_tab_flag = 1
+
+			redraw!
+			echo "[/{ Move left [/} right j/J down k/K up F1 for help"
+		else
+			redraw!
+		endif
 	endif
-	"redir END
-	"echo output
 endfun
+
+function! oracle_tui#DeleteCurrentFile()
+    let l:file = expand('%:p')
+
+    if !empty(l:file) && filereadable(l:file)
+        call delete(l:file)
+    endif
+endfunction
 
 function! oracle_tui#SumVisual() range
 	let reg_bak = @a
@@ -536,20 +742,20 @@ function! oracle_tui#Tablist(...)
 	let g:prompt_str = "Press Ctrl+k for completion"
 
 	if g:grep_table_window_flag != 1
-		let s:save_laststatus = &laststatus
-		let s:save_statusline = &statusline
+		let t:save_laststatus = &laststatus
+		let t:save_statusline = &statusline
 	endif
 	setlocal laststatus=2
 	setlocal statusline=%{g:prompt_str}
 	setlocal nowrap
 
-	"call add(s:head_update_buffers, bufnr('%'))
+	"call add(t:head_update_buffers, bufnr('%'))
 	set buftype=nofile
 	sil execute cmd
 	if shell_error != 0
 		call oracle_tui#ShowErr("No table name:".a:1."\n")
-		execute "setlocal laststatus=" . s:save_laststatus
-		execute "setlocal statusline=" . escape(s:save_statusline, ' ')
+		execute "setlocal laststatus=" . t:save_laststatus
+		execute "setlocal statusline=" . escape(t:save_statusline, ' ')
 		let g:grep_table_window_flag = 0
 		:q
 		return
@@ -559,13 +765,13 @@ function! oracle_tui#Tablist(...)
 		"sleep 3
 	endif
 	"<F9> Display table definitions in crtdb.txt
-	nnoremap <silent> <buffer> [20~ :ShowTab<CR>
+	nnoremap <silent> <buffer> [20~ :call oracle_tui#ShowTab()<CR>
 	
 	"<F10> Display statements for creating database objects
-	nnoremap <silent> <buffer> [21~ :DescObj<CR>
+	nnoremap <silent> <buffer> [21~ :call oracle_tui#DescObj()<CR>
 
 	"Ctrl+k for completion
-	nnoremap <silent> <buffer> <C-K> :GetWord<CR>
+	nnoremap <silent> <buffer> <C-K> :call oracle_tui#GetWord()<CR>
 	cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckGrepTableCommand()
 	let g:grep_table_window_flag = 1
 endfun
@@ -576,8 +782,8 @@ function! oracle_tui#CheckGrepTableCommand() abort
 
     if type == ':' && (cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*x')
 		let g:grep_table_window_flag = 0
-		execute "setlocal laststatus=" . s:save_laststatus
-		execute "setlocal statusline=" . escape(s:save_statusline, ' ')
+		execute "setlocal laststatus=" . t:save_laststatus
+		execute "setlocal statusline=" . escape(t:save_statusline, ' ')
     endif
 
     return "\<CR>"
@@ -598,8 +804,8 @@ function! oracle_tui#GetWord()
 
 	let word=expand("<cword>")
 	if &buftype == "nofile"
-		execute "setlocal laststatus=" . s:save_laststatus
-		execute "setlocal statusline=" . escape(s:save_statusline, ' ')
+		execute "setlocal laststatus=" . t:save_laststatus
+		execute "setlocal statusline=" . escape(t:save_statusline, ' ')
 		:q
 		let line = getline('.')
 		let col = col('.')
@@ -657,7 +863,7 @@ function! oracle_tui#GetWord()
 	let g:grep_table_window_flag = 0
 endfun
 
-"let s:head_update_buffers = []
+"let t:head_update_buffers = []
 function! oracle_tui#ShowTab() 
 	"let word=expand("<cword>")
 	"execute  "!db_showtab.sh ".word
@@ -694,7 +900,7 @@ function! oracle_tui#ShowTab()
 	"set hid
 	"enew
 	tabnew
-	"call add(s:head_update_buffers, bufnr('%'))
+	"call add(t:head_update_buffers, bufnr('%'))
 
 	"set nowrap
 	setlocal buftype=nofile
@@ -803,7 +1009,7 @@ function! oracle_tui#GrepTab()
 		"echo "word2=".word
 	endif
 	"sleep 2
-	execute ":Tablist ".word
+	execute ":call oracle_tui#Tablist('".word."')"
 endfun
 
 function! oracle_tui#Seelock()
@@ -959,7 +1165,7 @@ function! oracle_tui#ListObj()
 		"set hid
 		vertical vnew
 
-		"call add(s:head_update_buffers, bufnr('%'))
+		"call add(t:head_update_buffers, bufnr('%'))
 
 		"set nowrap
 		set buftype=nofile
@@ -984,11 +1190,14 @@ function! oracle_tui#ListObj()
 		"cmap <silent> <buffer> q bd<bar>execute s:last_win_nr.'wincmd w'
 		"cmap <silent> <buffer> q bd<bar>execute winnr('#').'wincmd w'
 
+		"<F7> 
+		nnoremap <silent> <buffer> [18~ :call oracle_tui#ListObj()<CR>
+
 		"<F9> Display table definitions in crtdb.txt
-		nnoremap <silent> <buffer> [20~ :ShowTab<CR>
+		nnoremap <silent> <buffer> [20~ :call oracle_tui#ShowTab()<CR>
 		
 		"<F10> Display statements for creating database objects
-		nnoremap <silent> <buffer> [21~ :DescObj<CR>
+		nnoremap <silent> <buffer> [21~ :call oracle_tui#DescObj()<CR>
 
 		cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckListObjViewCommand()
 
@@ -1112,19 +1321,18 @@ function! oracle_tui#DBCliHelp()
 endfun
 
 "The following is the browser.
-let s:show_view_vertical_flag = 0
 fun! oracle_tui#ViewVerSplit()
-	if s:show_view_vertical_flag == 1
-		let s:show_view_vertical_flag = 0
+	if t:show_view_vertical_flag == 1
+		let t:show_view_vertical_flag = 0
 		:q!
     	"call feedkeys(":call oracle_tui#ShowViewTitle()\<CR>", 'n')
     	call oracle_tui#ShowViewTitle()
 		return
 	else
-		let s:show_view_vertical_flag = 1
+		let t:show_view_vertical_flag = 1
 
-		if s:show_view_title_flag == 1
-			let s:show_view_title_flag = 0
+		if t:show_view_title_flag == 1
+			let t:show_view_title_flag = 0
 			wincmd k
 			q
 			"echo "hello"
@@ -1144,26 +1352,26 @@ fun! oracle_tui#ViewVerSplit()
 	endif
 endfun
 
-let s:show_update_vertical_flag = 0
 fun! oracle_tui#UpdateVerSplit()
-	if s:show_update_vertical_flag == 1
-		let s:show_update_vertical_flag = 0
-		:q!
-		if line('$') > 1
-    		"call feedkeys(":call oracle_tui#ShowUpdateTitle()\<CR>", 'n')
-    		call oracle_tui#ShowUpdateTitle()
-		endif
+	if t:show_update_vertical_flag == 1
+		let t:show_update_vertical_flag = 0
+		q!
+		"if line('$') > 1
+    	"	"call feedkeys(":call oracle_tui#ShowUpdateTitle()\<CR>", 'n')
+    	"	call oracle_tui#ShowUpdateTitle()
+		"endif
+    	call oracle_tui#ShowUpdateTitle()
 		return
 	else
-		let s:show_update_vertical_flag = 1
+		let t:show_update_vertical_flag = 1
 
 		if v:version < 900
 			diffoff
-			let s:show_diff_flag = 0
+			let t:show_diff_flag = 0
 		endif
 
-		if s:show_update_title_flag == 1
-			let s:show_update_title_flag = 0
+		if t:show_update_title_flag == 1
+			let t:show_update_title_flag = 0
 			wincmd k
 			q
 			"bwipeout
@@ -1181,6 +1389,8 @@ fun! oracle_tui#UpdateVerSplit()
 		normal! j 
 		call cursor(line,col)
 		normal! 20zl
+
+		let w:update_window_flag = 1
 	endif
 endfun
 
@@ -1211,71 +1421,97 @@ fun! oracle_tui#Crtsql()
 endfun
 
 "Initialize without loading the column definition file
-let s:load_column_define_flag = 0
-let s:field_charset = []
-let s:field_data_len = []
-let s:field_widths = []
-let s:field_types = []
-let s:field_names = []
+"let s:load_column_define_flag = 0
 "Total number of lines in the current file
-let s:tot_line_num = 0
+"let s:tot_line_num = 0
 fun! oracle_tui#ReadColumn()
 	"Do not load again if it has already been loaded once
 	"Because opening a file with tabnew and then closing it with tabclose will re-invoke ReadColumn
-	if s:load_column_define_flag == 0
-		let s:load_column_define_flag = 1
-	else
-		return
-	endif
+	"if s:load_column_define_flag == 0
+	"	let s:load_column_define_flag = 1
+	"else
+	"	return
+	"endif
 	
 	normal! 20zl
 
 	"Get total number of lines in the current file
-	let s:tot_line_num = line('$') - 1
-	let s:field_widths = []
-	let s:field_types = []
-	let s:field_names = []
-	let s:field_data_len = []
+	"let s:tot_line_num = line('$') - 1
+	let t:field_widths = []
+	let t:field_types = []
+	let t:field_names = []
+	let t:field_data_len = []
 
-    let file=expand("%")
-    let shortfile = substitute(file, '.txt.new', '', "g")
-    let vimpid = substitute(shortfile, '.*-', '', "g")
+	let vimpid = getpid()
 	let dbdir=$HOME."/.dbtmp/"
-	let col_file = dbdir.vimpid."_col.txt"
+	let col_file = dbdir."upd_".vimpid.".col"
 
     let lines = readfile(col_file)
     
+	let b:lob_file_flag = 0
     for line in lines
         let parts = split(line)
-        call add(s:field_names,  parts[0])
-        call add(s:field_types,  parts[1])
-		"s:field_widths stores the alignment width, taking the maximum of the data length and field name length
+        call add(t:field_names,  parts[0])
+        call add(t:field_types,  parts[1])
+		"t:field_widths stores the alignment width, taking the maximum of the data length and field name length
 		"Convert to numbers here for comparison, otherwise it will compare as strings
 		if str2nr(parts[2]) >= str2nr(parts[3])
-        	call add(s:field_widths, str2nr(parts[2]))
+        	call add(t:field_widths, str2nr(parts[2]))
 		else
-        	call add(s:field_widths, str2nr(parts[3]))
+        	call add(t:field_widths, str2nr(parts[3]))
 		endif
-		"s:field_data_len is the length of the data
-        call add(s:field_data_len, str2nr(parts[2]))
-        call add(s:field_charset, str2nr(parts[4]))
+		"t:field_data_len is the length of the data
+        call add(t:field_data_len, str2nr(parts[2]))
+        call add(t:field_charset, str2nr(parts[4]))
+		if parts[1] == 112 
+		   \ || parts[1] == 113  
+		   \ || parts[1] == 8
+		   \ || parts[1] == 24
+			let b:lob_file_flag = 1
+		endif
+    endfor
+endfun
+
+fun! oracle_tui#SaveLobAndSeq()
+	let t:field_lob_content = {} 
+	let t:seqno_arr = {}
+	let t:max_seqno = 0
+    for lnum in range(2, line('$'))
+        let line = getline(lnum)
+
+        let fields = split(line, '', 1)
+    	for i in range(len(fields))
+			if i == 0
+    			let idx_field = substitute(fields[i], ' ', '', 'g')
+				let t:max_seqno += 1
+				let t:seqno_arr[idx_field] = t:max_seqno
+			endif
+
+			if (t:field_types[i] == 112 ||
+				\ t:field_types[i] == 8 ||
+				\ t:field_types[i] == 113 ||
+				\ t:field_types[i] == 24 )
+				let idx = printf("%s,%d", idx_field, i)
+				let t:field_lob_content[idx] = substitute(fields[i], ' ', '', 'g')
+			endif
+    	endfor
     endfor
 endfun
 
 fun! ClearColumnList()
-	let s:field_widths = []
-	let s:field_types = []
-	let s:field_names = []
-	let s:field_data_len = []
-	let s:field_charset = []
+	let t:field_widths = []
+	let t:field_types = []
+	let t:field_names = []
+	let t:field_data_len = []
+	let t:field_charset = []
 	echo "Data has been cleared"
 endfun
 
 fun! oracle_tui#Update()
 	:w
     let file=expand("%")
-    let shortfile = substitute(file, '.txt.new', '', "g")
-    let cmd = "!clear && db_update_data.sh ".shortfile
+    let shortfile = substitute(file, '.new', '', "g")
+    let cmd = "!db_update_data.sh ".shortfile
 	"if exists('s:username') && exists('s:password')
 	"	let cmd = cmd." ".s:username." ".s:password 
 	"endif
@@ -1284,6 +1520,7 @@ fun! oracle_tui#Update()
 	try
     	"sil execute "!clear && db_update_data.sh ".shortfile
     	sil execute cmd
+		"let output=system(cmd)
 	catch 
 		echo "Catch an interrupt"
 		"sleep 3
@@ -1294,7 +1531,42 @@ fun! oracle_tui#Update()
 	"Do not exit when delimiters are mismatched, an update error occurs, or re-modification is needed
 
 	if status != 1
-		:qall!
+		let pid = getpid()
+		call system('rm -f ~/.dbtmp/upd_'.pid.'[_.]*')
+
+		execute "setlocal laststatus=" . g:save_laststatus
+		execute "setlocal statusline=" . escape(g:save_statusline, ' ')
+
+		autocmd! DBUpdate
+
+		call oracle_tui#TabCloseUpdateAll()
+
+		let &mouse = s:save_mouse
+		let &showtabline = s:save_showtabline
+		redraw!
+
+		if status == 0
+			echo "Data modify success.Press <F2>/rollback <F6>/commit"
+		elseif status == 3
+			call oracle_tui#ShowMsg("No data has been modified!")
+			echo ""
+		elseif status == 4
+			call oracle_tui#ShowErr("Database connection interrupted!")
+			echo ""
+		elseif status == 10
+			call oracle_tui#ShowErr("AWK syntax error when generating update SQL!")
+			echo ""
+		elseif status == 11
+			call oracle_tui#ShowErr("Error generating update SQL!")
+			echo ""
+		elseif status == 15
+			call oracle_tui#ShowErr("Command line parameter error!")
+			echo ""
+		else
+			call oracle_tui#ShowErr("Exception, unknown return code:".status)
+			echo ""
+		endif
+
 		return
 	endif
 
@@ -1534,9 +1806,6 @@ function! oracle_tui#PasteColumn()
     "endfor
 endfunction
 
-let s:start_pos = 0
-let s:end_pos = 0
-
 "sil execute "4,".end_line." s/.*/\=strpart(submatch(0),".start_pos.",".len.").\" \".submatch(0)/g"
 "Sort by the content of a specific column
 "Since sort -n does not sort negative numbers correctly, use a sorting function instead
@@ -1678,8 +1947,8 @@ func! oracle_tui#ColSort(sort_flag, data_type)
 		let end = col('.')
 	endif
 
-	let s:start_pos = start - 1
-	let s:end_pos = end - 1
+	let t:start_pos = start - 1
+	let t:end_pos = end - 1
 
 	set nows
 	let null_line = 1
@@ -1747,7 +2016,6 @@ func! oracle_tui#Filter(str)
     let l:vir_col = virtcol('.')
     let l:separator_text = getline(3)
     
-    " 获取字段边界
     let l:boundary = oracle_tui#GetFieldBoundaries(l:separator_text, l:vir_col)
     if empty(l:boundary)
         return
@@ -1758,14 +2026,14 @@ func! oracle_tui#Filter(str)
 	let first_char = strpart(second_line, boundary.start-1, 1) 
 
 	if first_char == ' '
-		let type = 1 "数字
+		let type = 1 
 	else
-		let type = 2 "非数字
+		let type = 2 
 	endif
 
     let l:end_line = line('$')
 	let match_list = []
-    " 查找第一个空行
+
 	let find_flag = 0
     for l:i in range(4, line('$'))
         if getline(l:i) == ''
@@ -1789,7 +2057,7 @@ func! oracle_tui#Filter(str)
     endfor
 	
 	if find_flag == 0
-		call oracle_tui#ShowErr("该列不包含:".match_str)
+		call oracle_tui#ShowErr("This column does not contain:".match_str)
 		return 
 	endif
 
@@ -1812,7 +2080,7 @@ function! oracle_tui#GetVColRange(str, start_pos, end_pos)
 endfunction
 
 function! oracle_tui#Hid()
-	setlocal syntax=csv
+	"setlocal syntax=csv
 	"You must add the following line, otherwise there will be issues in Vim 9.2
 	syntax clear
 
@@ -1833,6 +2101,13 @@ function! oracle_tui#Hid()
 
 	"Display \t as ?
 	syn match Substitute /	/ conceal cchar=?
+
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		"syn match Comment /<upd_[^>]*_lob_[^>]*\.\(old\|new\)>/
+		syn match WarningMsg /<upd_[^>]*_lob_[^>]*\.\(old\|new\)>/
+	endif
+
+	call oracle_tui#ReShowNullChar() 
 
 	redraw!
 endfun
@@ -1870,13 +2145,12 @@ function! oracle_tui#ProtectFirstLine()
 	"nnoremap <buffer> <expr> D line('.')==1 ? '' : 'D'
 endfunction
 
-let s:head_update_buffers = []
+"let t:head_update_buffers = []
 "Show differences compared to the original file
-let s:show_diff_flag = 0
 function! oracle_tui#ShowDiff()
 	"nnoremap <silent> <buffer> r R
 	
-	if s:show_diff_flag == 0
+	if t:show_diff_flag == 0
 		let view = winsaveview()
 		let file=expand("%")
 		let oldfile = substitute(file, "new$", "old", "g")
@@ -1884,7 +2158,7 @@ function! oracle_tui#ShowDiff()
 		"echo "oldfile=".oldfile
 		"sleep 3
 		execute "vert diffsplit ".oldfile
-		"call add(s:head_update_buffers, bufnr('%'))
+		"call add(t:head_update_buffers, bufnr('%'))
 		hid
 		set foldcolumn=0
 		setlocal nofoldenable
@@ -1893,15 +2167,21 @@ function! oracle_tui#ShowDiff()
 		"set scrollbind
 		"Cancel vertical synchronization, keep horizontal synchronization
 		"set nocursorbind
-		let s:show_diff_flag = 1
+		let t:show_diff_flag = 1
 		call winrestview(view)
+
+		call oracle_tui#ReShowNullChar() 
+
+		echo "Enable modification display"
 	else
 		diffoff
-		let s:show_diff_flag = 0
+		let t:show_diff_flag = 0
 
-		if s:show_update_title_flag == 1
+		if t:show_update_title_flag == 1
 			set sbo=hor
 		endif
+
+		echo "Disable modification display"
 	endif
 endfunction
 
@@ -1917,10 +2197,10 @@ function! oracle_tui#HorSplitHeader()
 	setlocal nowrap
 	setlocal cul
 
-	"call add(s:head_update_buffers, bufnr('%'))
+	"call add(t:head_update_buffers, bufnr('%'))
 
 	sil execute cmd
-	Hid
+	call oracle_tui#Hid()
 	2d
 	resize 1
 
@@ -1939,15 +2219,15 @@ function! oracle_tui#PreserveView()
 	call winrestview(view)
 endfunction
 
-function! oracle_tui#CloseAllBuffs()
-	for bufnum in s:head_update_buffers
-		if bufexists(bufnum)
-			"echo 'bwipeout! '.bufnum
-			"sleep 2
-			execute 'bwipeout! '.bufnum
-		endif
-	endfor
-endfunction
+"function! oracle_tui#CloseAllBuffs()
+"	for bufnum in t:head_update_buffers
+"		if bufexists(bufnum)
+"			"echo 'bwipeout! '.bufnum
+"			"sleep 2
+"			execute 'bwipeout! '.bufnum
+"		endif
+"	endfor
+"endfunction
 
 "Jump to the next field
 function! oracle_tui#JumpNextColumn()
@@ -1971,7 +2251,8 @@ endfunction
 
 function! oracle_tui#GetCurrentColumn()
     let line = getline('.')
-    let col = col('.') - 1
+    "let col = col('.') - 1
+    let col = col('.') 
     
     if col < 0
         return 0
@@ -2037,6 +2318,7 @@ endfunction
 function! oracle_tui#EditColumnBefore2()
 	let current_column_num = oracle_tui#GetCurrentColumn()
 	let next_column_num = current_column_num - 1
+
 	let result = oracle_tui#AlignColumnReal() 
     if result == 0
 		"call oracle_tui#EditColumnBefore()
@@ -2199,13 +2481,114 @@ endfunction
 function! oracle_tui#NewLine()
 	"normal o
     let first_cont = getline(1)
+    let first_cont = substitute(first_cont, '[^]', ' ', 'g')
+
+	let t:max_seqno += 1
+
+	let idx_field = "NEW_".t:max_seqno
+	let t:seqno_arr[idx_field] = t:max_seqno
+
+	let idx_field = idx_field.repeat(' ', 18 - strwidth(idx_field))
+
+
+    let first_cont = substitute(first_cont, '^[^]*', idx_field, 'g')
+
    	call setline(line('.'), first_cont)
-	:s/[^]/ /g
-	:s/^[^]*/                  /g
+	":s/[^]/ /g
+	":s/^[^]*/                  /g
 	"normal! 0
 	call oracle_tui#CursorMovedForUpdate()
 	startreplace
 endfunction
+
+function! oracle_tui#ChangeRegisterContent(regname)
+    let reg = a:regname
+	let pid = getpid()
+
+    if getregtype(reg) ==# 'V'
+        let content = getreg(reg)
+        let lines = split(content, "\n")
+        let processed = []
+        for line in lines
+			"if line =~ '^$'
+			"	continue
+			"endif
+
+        	let fields = split(line, '', 1)
+
+        	let new_fields = []
+
+			let has_add_flag = 0
+    		for i in range(len(fields))
+				let field = fields[i]
+				if i == 0
+    	    		"let field = repeat(' ', 18)
+					let t:max_seqno += 1
+					let field = "NEW_".t:max_seqno
+					let idx_field = field
+					let t:seqno_arr[idx_field] = t:max_seqno
+
+					let field = field.repeat(' ', 18 - strwidth(field))
+				endif
+
+				if (t:field_types[i] == 112 ||
+					\   t:field_types[i] == 8 || 
+					\   t:field_types[i] == 113 || 
+					\   t:field_types[i] == 24)
+    				let field = substitute(field, ' ', '', 'g')
+					if field != ''
+    					let field = substitute(field, '<', '', 'g')
+    					let field = substitute(field, '>', '', 'g')
+						let old_lob_file = field
+						let old_lob_file_with_dir=$HOME."/.dbtmp/".old_lob_file
+    					if !filereadable(old_lob_file_with_dir)
+							call oracle_tui#ShowErr("File [".old_lob_file_with_dir."] is not exists!")
+							"sleep 2
+							return 1
+						endif
+
+						let new_lob_file = printf("upd_%d_lob_%d_%d.new", pid, t:max_seqno, i)
+						let new_lob_file_with_dir=$HOME."/.dbtmp/".new_lob_file
+
+						let cmd = "cp ".old_lob_file_with_dir." ".new_lob_file_with_dir
+						call system(cmd)
+						let exit_status = shell_error
+						if exit_status != 0
+							let str = "Copy file error!"
+							call oracle_tui#ShowErr(str)
+							"sleep 2
+							return 1
+						endif
+						let field = "<".new_lob_file.">"
+
+						let idx = printf("%s,%d", idx_field, i)
+						let t:field_lob_content[idx] = field
+
+						let field = field.repeat(' ', t:field_widths[i] - strwidth(field))
+    	    			call add(new_fields, field)
+					else
+    	    			call add(new_fields, repeat(' ', t:field_widths[i]))
+					endif
+				else
+    	    		call add(new_fields, field)
+				endif
+			endfor
+			"if has_add_flag == 1
+			"	let field = "NEW_".s:tot_line_num
+			"	let field = field.repeat(' ', 18 - strwidth(field))
+			"	let new_fields[0] = field
+			"endif
+    		let new_line_content = join(new_fields, '')
+
+            call add(processed, new_line_content)
+        endfor
+        let modified = join(processed, "\n")
+
+        call setreg(reg, modified, 'V')
+    endif
+	return 0
+endfunction
+
 
 function! oracle_tui#Visual_paste(type)
 	let regname = v:register
@@ -2215,17 +2598,35 @@ function! oracle_tui#Visual_paste(type)
     let line_count_reg = len(lines)
 	let line_count_sel = line("'>'") - line("'<") + 1
 
-	if visualmode() ==# ''
+	if visualmode() ==# 'v'
+		redraw!
+		call oracle_tui#ShowErr("Pasting is not allowed in V mode!")
+		return
+	elseif visualmode() ==# ''
 		if line_count_reg != line_count_sel
 			redraw!
 			call oracle_tui#ShowErr("Selected row count mismatch with register")
 			return
 		endif
+		let end_line_num = line("'<") + line_count_reg - 1 
+	else
+		let end_line_num = line("'<") + line_count_reg - 1 -1
 	endif
 
-    let s:visual_insert = {
+	let regname = v:register
+	let result = oracle_tui#ChangeRegisterContent(regname)
+	if result != 0
+		return
+	endif
+
+    "let t:visual_insert = {
+    "    \ 'start_line': line("'<"),
+    "    \ 'end_line': line("'>")
+    "    \ }
+
+    let t:visual_insert = {
         \ 'start_line': line("'<"),
-        \ 'end_line': line("'>")
+        \ 'end_line': end_line_num
         \ }
 
 	"Executing normal! gv changes the value of v:register
@@ -2261,10 +2662,16 @@ function! oracle_tui#Normal_paste(type)
 	let start_line = line('.')
 	let end_line = start_line + line_count_reg - 1
 
-    let s:visual_insert = {
+    let t:visual_insert = {
         \ 'start_line': start_line,
         \ 'end_line': end_line
         \ }
+
+	let regname = v:register
+	let result = oracle_tui#ChangeRegisterContent(regname)
+	if result != 0
+		return
+	endif
 
 	if a:type == 'p'
 		if v:register == '"'
@@ -2283,7 +2690,7 @@ function! oracle_tui#Normal_paste(type)
 endfunction
 
 function! oracle_tui#VisualSaveState()
-    let s:visual_insert = {
+    let t:visual_insert = {
         \ 'start_line': line("'<"),
         \ 'end_line': line("'>")
         \ }
@@ -2298,7 +2705,7 @@ function! oracle_tui#VisualSaveStateX()
 	endif
 
 	if visualmode() ==# ''
-    	let s:visual_insert = {
+    	let t:visual_insert = {
     	    \ 'start_line': line("'<"),
     	    \ 'end_line': line("'>")
     	    \ }
@@ -2322,7 +2729,7 @@ function! oracle_tui#VisualSaveStateD()
 	endif
 
 	if visualmode() ==# ''
-    	let s:visual_insert = {
+    	let t:visual_insert = {
     	    \ 'start_line': line("'<"),
     	    \ 'end_line': line("'>")
     	    \ }
@@ -2356,7 +2763,7 @@ function! oracle_tui#Process_x()
     endfor
 
 	call oracle_tui#AlignColumnReal()
-	if s:field_types[current_field] == 2 || s:field_types[current_field] == 100 || s:field_types[current_field] == 101
+	if t:field_types[current_field] == 2 || t:field_types[current_field] == 100 || t:field_types[current_field] == 101
 		if getline('.')[col('.')-1] == ''
 			normal! h
 		else
@@ -2365,14 +2772,14 @@ function! oracle_tui#Process_x()
 	endif
 endfunction
 
-let s:title_line = ''
+"let t:title_line = ''
 function! oracle_tui#AlignColumnReal()
-    if exists('s:visual_insert') 
+    if exists('t:visual_insert') 
 		let type = 1
 	else
 		"normal x X dw de D  for one line
 		let type = 2
-    	let s:visual_insert = {
+    	let t:visual_insert = {
     	    \ 'start_line': line('.'),
     	    \ 'end_line': line('.')
     	    \ }
@@ -2380,12 +2787,6 @@ function! oracle_tui#AlignColumnReal()
     let current_col = virtcol('.')
 
 	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
 
 	let view = winsaveview()
 
@@ -2393,29 +2794,28 @@ function! oracle_tui#AlignColumnReal()
     
 	let more_flag = 0
     "Process each line (starting from the second line) 
-	if s:visual_insert.start_line <= 1
+	if t:visual_insert.start_line <= 1
 		normal! u
 		redraw!
 		call oracle_tui#ShowErr("The title row cannot be modified")
 		"Add the following line
-    	unlet s:visual_insert
+    	unlet t:visual_insert
 		return 1
 	endif
 
-    for lnum in range(s:visual_insert.start_line, s:visual_insert.end_line)
-		let extend_lob_file_flag = 0
+    for lnum in range(t:visual_insert.start_line, t:visual_insert.end_line)
         let line = getline(lnum)
         let fields = split(line, '', 1)
-		if len(fields) != len(s:field_names)
+		if len(fields) != len(t:field_names)
 			normal! u
 			redraw!
-			if len(fields) < len(s:field_names)
+			if len(fields) < len(t:field_names)
 				call oracle_tui#ShowErr("Only one column can be modified at a time")
 			else
 				call oracle_tui#ShowErr("The number of columns exceeds the number of fields")
 			endif
 			"Add the following line
-    		unlet s:visual_insert
+    		unlet t:visual_insert
 			return 1
 		endif
 
@@ -2430,91 +2830,75 @@ function! oracle_tui#AlignColumnReal()
     		let field = substitute(fields[i], ' *$', '', 'g')
     		let field = substitute(field, ' ', ' ', 'g')
 
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if i == 0
+				let idx_field = substitute(field, ' ', '', 'g')  
+			endif
+
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
 				"Numeric type
     	    	let field = substitute(field, ' ', '', 'g')
-			elseif s:field_types[i] == 96
+			elseif t:field_types[i] == 96
 				"If it is a CHAR type, keep it unchanged if it consists only of spaces; otherwise, remove trailing spaces
 				if field !~ "^  *$"
     	    		let field = substitute(field, ' *$', '', 'g')
+				else
+					if  strwidth(field) > str2nr(t:field_data_len[i])
+    	    			let field = repeat(' ', t:field_data_len[i])
+					endif
 				endif
-			elseif s:field_types[i] != 1 && s:field_types[i] != 112 
+			elseif t:field_types[i] != 1 && t:field_types[i] != 112 
 				"varchar2/nvarchar2/clob/nclob can not trim space
     	    	let field = substitute(field, ' *$', '', 'g')
 			endif
 
 			"Right-align numbers
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
 				"Right-align
-    	    	call add(new_fields, repeat(' ', s:field_widths[i] - strwidth(field)).field)
-			elseif (s:field_types[i] == 112 ||
-				\   s:field_types[i] == 8 || 
-				\   s:field_types[i] == 113 || 
-				\   s:field_types[i] == 24)
+    	    	call add(new_fields, repeat(' ', t:field_widths[i] - strwidth(field)).field)
+			elseif (t:field_types[i] == 112 ||
+				\   t:field_types[i] == 8 || 
+				\   t:field_types[i] == 113 || 
+				\   t:field_types[i] == 24)
+
+				let idx = printf("%s,%d", idx_field, i)
+
 				"lob
-				if (s:field_types[i] == 112 ||
-					\ s:field_types[i] == 8 ||
-					\ s:field_types[i] == 113 ||
-					\ s:field_types[i] == 24 )
-					\ && s:lob_substitute_flag == 1
+				if t:lob_substitute_flag == 1
 					"If the LOB field contains a filename, restore it using the content from the pre-replacement backup
-					let idx = printf("'%d,%d'", lnum, i)
-    	    		call add(new_fields, s:field_lob_content[idx])
+					let field_lob_content = get(t:field_lob_content, idx, '')
+    	    		call add(new_fields, field_lob_content.repeat(' ', t:field_widths[i] - strwidth(field_lob_content)))
 				else
-					if (s:field_types[i] == 112 ||
-						\ s:field_types[i] == 8 ||
-						\ s:field_types[i] == 113 ||
-						\ s:field_types[i] == 24 )
-						\ && lob_file_flag == 1
-						"let lob_old_filename = printf("<lob_%d_%d_%d.txt.old>", pid,cur_line_num-1,i)
-						"let lob_new_filename = printf("<lob_%d_%d_%d.txt.new>", pid,cur_line_num-1,i)
-						"if field != lob_old_filename && field != lob_new_filename 
-						"	call oracle_tui#ShowErr("LOB fields can only be modified using Ctrl+a")
-						"	return
-						"endif
-    	    			let field = substitute(field, ' ', '', 'g')
-						if field !~# '^<lob_.*.txt.old>$' && field !~# '^<lob_.*.txt.new>$' && field != ''
-							normal! u
-							redraw!
-    						unlet s:visual_insert
-							call oracle_tui#ShowErr("This field can only be modified using Ctrl+a")
-							"Disable tooltips on cursor idle
-							let s:prompt_flag = s:field_types[i]
-							return 1
-						endif
+    	    		let field = substitute(field, ' ', '', 'g')
+
+					let diff_field = substitute(field, '\.new\|\.old', '', 'g')
+
+					let save_diff_field = get(t:field_lob_content, idx, '')
+					let save_diff_field = substitute(save_diff_field, '\.new\|\.old', '', 'g')
+
+					if field != '' && diff_field !=# save_diff_field
+						normal! u
+						redraw!
+    					unlet t:visual_insert
+						call oracle_tui#ShowErr("This field can only be modified using Ctrl+a")
+						let t:prompt_flag = t:field_types[i]
+						return 1
 					endif
 
-					if strwidth(field)  > s:field_widths[i] 
-					 	let s:field_widths[i] = strwidth(field)
-    	    			call add(new_fields, field)
-						"let add_len[i] = strwidth(field) - s:field_widths[i]
-						let extend_lob_file_flag = 1
-					else
-						if lob_file_flag == 1 
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						else
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						endif
-						"let add_len[i] = 0
-					endif
+    	    		call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 				endif
-			elseif s:field_types[i] == 1 || s:field_types[i] == 96
+			elseif t:field_types[i] == 1 || t:field_types[i] == 96
 				"char/nchar/varchar2/nvarchar2 
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			else
 				"Left-align
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			endif
 
-			if s:field_types[i] == 96 && field =~ "^  *$" 
-				if  strwidth(field) > str2nr(s:field_widths[i])
-					let more_flag = 1
-				endif
-			elseif strwidth(field) > str2nr(s:field_data_len[i]) 
-				\ && s:field_types[i] != 112 
-				\ && s:field_types[i] != 8
-				\ && s:field_types[i] != 113 
-				\ && s:field_types[i] != 24
+			if strwidth(field) > str2nr(t:field_data_len[i]) 
+				\ && t:field_types[i] != 112 
+				\ && t:field_types[i] != 8
+				\ && t:field_types[i] != 113 
+				\ && t:field_types[i] != 24
 				let more_flag = 1
 			endif
     	endfor
@@ -2523,41 +2907,6 @@ function! oracle_tui#AlignColumnReal()
     	call setline(lnum, join(new_fields, ''))
     endfor
 
-	"If a LOB field in any row exceeds the original length, extend the column length for the entire file
-	if extend_lob_file_flag == 1
-    	for lnum in range(1, line('$'))
-			"The bottom part shouldn't be there
-			"if lnum >= s:visual_insert.start_line && lnum <= s:visual_insert.end_line
-			"	continue
-			"endif
-
-    	    let line = getline(lnum)
-    	    let fields = split(line, '', 1)
-    	    let new_fields = []
-    	    
-    	    " Align all fields
-    		for i in range(len(fields))
-    			let field = fields[i]
-				if (s:field_types[i] == 112 ||
-					\ s:field_types[i] == 8 ||
-					\ s:field_types[i] == 113 ||
-					\ s:field_types[i] == 24)
-					"lob
-    		    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-				else
-					"Left-align
-    		    	call add(new_fields, field)
-				endif
-    		endfor
-    	    
-			if (lnum == 1)
-				let s:title_line = join(new_fields, '')
-			endif
-    	    " Recombine lines
-    	    call setline(lnum, join(new_fields, ''))
-    	endfor
-	endif
-    
     "call setpos('.', save_cursor)
 
 	diffupdate
@@ -2567,22 +2916,10 @@ function! oracle_tui#AlignColumnReal()
 
 	redraw!
     
-    unlet s:visual_insert
-	if s:lob_substitute_flag == 1
-		let s:lob_substitute_flag = 0
-		let s:field_lob_content = {}
-	endif
-
-	if extend_lob_file_flag == 1
-		if s:show_update_title_flag == 1
-			wincmd k
-    		call setline(1, s:title_line)
-			Hid
-
-			wincmd j
-			normal! zl
-			normal! zh
-		endif
+    unlet t:visual_insert
+	if t:lob_substitute_flag == 1
+		let t:lob_substitute_flag = 0
+		"let t:field_lob_content = {}
 	endif
 
 	if more_flag == 1
@@ -2605,12 +2942,12 @@ function! oracle_tui#AlignColumn()
         
         "Get the maximum length of the LOB fields
     	for i in range(len(fields))
-			if (s:field_types[i] == 112 ||
-			    \ s:field_types[i] == 8 ||
-			    \ s:field_types[i] == 113 ||
-			    \ s:field_types[i] == 24) 
-				if len(fields[i] )  > str2nr(s:field_widths[i])
-					let s:field_widths[i] = len(fields[i] )
+			if (t:field_types[i] == 112 ||
+			    \ t:field_types[i] == 8 ||
+			    \ t:field_types[i] == 113 ||
+			    \ t:field_types[i] == 24) 
+				if len(fields[i] )  > str2nr(t:field_widths[i])
+					let t:field_widths[i] = len(fields[i] )
 				endif
 			endif
     	endfor
@@ -2628,13 +2965,17 @@ function! oracle_tui#AlignColumn()
     		let field = substitute(fields[i], ' *$', '', 'g')
     		let field = substitute(field, ' ', ' ', 'g')
 
+			if i == 0
+				let idx_field = substitute(field, ' ', '', 'g')  
+			endif
+
 			"Numeric type
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
     	    	let field = substitute(field, ' ', '', 'g')
 			endif
 
 			"If it is a CHAR type, keep it unchanged if it consists only of spaces; otherwise, remove trailing spaces
-			if s:field_types[i] == 96
+			if t:field_types[i] == 96
 				if field =~ "^  *$"
 					let field = " "
 				else
@@ -2643,74 +2984,50 @@ function! oracle_tui#AlignColumn()
 			endif
 
 			"Right-align numbers
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
 				"Right-align
-    	    	call add(new_fields, repeat(' ', s:field_widths[i] - strwidth(field)).field)
-			elseif (s:field_types[i] == 112 ||
-				\   s:field_types[i] == 8 || 
-				\   s:field_types[i] == 113 || 
-				\   s:field_types[i] == 24 )
-				"lob
-				if (s:field_types[i] == 112 ||
-					\ s:field_types[i] == 8 ||
-					\ s:field_types[i] == 113 ||
-					\ s:field_types[i] == 24 )
-					\ && s:lob_substitute_flag == 1
+    	    	call add(new_fields, repeat(' ', t:field_widths[i] - strwidth(field)).field)
+			elseif (t:field_types[i] == 112 ||
+				\   t:field_types[i] == 8 || 
+				\   t:field_types[i] == 113 || 
+				\   t:field_types[i] == 24 )
+				
+				let idx = printf("%s,%d", idx_field, i)
+				if t:lob_substitute_flag == 1
 					"If the LOB field contains a filename, restore it using the content from the pre-replacement backup
-					let idx = printf("'%d,%d'", lnum, i)
-    	    		call add(new_fields, s:field_lob_content[idx])
+    	    		call add(new_fields, t:field_lob_content[idx])
 				else
-					if (s:field_types[i] == 112 ||
-						\ s:field_types[i] == 8 ||
-						\ s:field_types[i] == 113 ||
-						\ s:field_types[i] == 24 )
-						\ && lob_file_flag == 1
-						"let lob_old_filename = printf("<lob_%d_%d_%d.txt.old>", pid,cur_line_num-1,i)
-						"let lob_new_filename = printf("<lob_%d_%d_%d.txt.new>", pid,cur_line_num-1,i)
-						"if field != lob_old_filename && field != lob_new_filename 
-						"	call oracle_tui#ShowErr("LOB fields can only be modified using Ctrl+a")
-						"	return
-						"endif
-    	    			let field = substitute(field, ' ', '', 'g')
-						if field !~# '^<lob_.*.txt.old>$' && field !~# '^<lob_.*.txt.new>$' && field != ''
-							normal! u
-							redraw!
-    						unlet s:visual_insert
-							call oracle_tui#ShowErr("This field can only be modified using Ctrl+a")
-							"Disable tooltips on cursor idle
-							let s:prompt_flag = s:field_types[i]
-							return 1
-						endif
+    	    		let field = substitute(field, ' ', '', 'g')
+
+					let diff_field = substitute(field, '\.new\|\.old', '', 'g')
+					let save_diff_field = substitute(t:field_lob_content[idx], '\.new\|\.old', '', 'g')
+
+					if field != '' && diff_field !=# save_diff_field
+						normal! u
+						redraw!
+    					unlet t:visual_insert
+						call oracle_tui#ShowErr("This field can only be modified using Ctrl+a")
+						let t:prompt_flag = t:field_types[i]
+						return 1
 					endif
 
-					if strwidth(field)  > s:field_widths[i] 
-					 	let s:field_widths[i] = strwidth(field)
-    	    			call add(new_fields, field)
-						"let add_len[i] = strwidth(field) - s:field_widths[i]
-						let extend_lob_file_flag = 1
-					else
-						if lob_file_flag == 1 
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						else
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						endif
-						"let add_len[i] = 0
+    	    		call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 					endif
 				endif
-			elseif s:field_types[i] == 1
+			elseif t:field_types[i] == 1
 				"varchar2/nvarchar2 add with nbsp
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			else
 				"Left-align add with space
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			endif
 
 			"Check against the maximum data length, not the display length
-			if strwidth(field) > str2nr(s:field_data_len[i]) 
-				\ && s:field_types[i] != 112 
-				\ && s:field_types[i] != 8
-				\ && s:field_types[i] != 113 
-				\ && s:field_types[i] != 24
+			if strwidth(field) > str2nr(t:field_data_len[i]) 
+				\ && t:field_types[i] != 112 
+				\ && t:field_types[i] != 8
+				\ && t:field_types[i] != 113 
+				\ && t:field_types[i] != 24
 				let more_flag = 1
 			endif
     	endfor
@@ -2728,9 +3045,12 @@ function! oracle_tui#AlignColumn()
 	endif
 endfunction
 
-let s:show_update_title_flag = 0
 function! oracle_tui#ShowUpdateTitle()
-	if s:show_update_title_flag == 0
+	if t:show_update_title_flag == 0
+		if line('$') <= 1
+			return
+		endif
+
 		if winwidth(0) < &columns
 			call oracle_tui#ShowErr("The title line is not available in a vertically split window")
 			return
@@ -2740,8 +3060,8 @@ function! oracle_tui#ShowUpdateTitle()
 		let cur_line = line('.')
 		let cur_col = col('.')
 
-		:w
-		let s:show_update_title_flag = 1
+		":w
+		let t:show_update_title_flag = 1
 		let file=expand("%")
 		let cmd = "0read !head -1 ".file
 		new split
@@ -2754,10 +3074,10 @@ function! oracle_tui#ShowUpdateTitle()
 		setlocal nocul
 		setlocal nonu
 
-		"call add(s:head_update_buffers, bufnr('%'))
+		"call add(t:head_update_buffers, bufnr('%'))
 
 		sil execute cmd
-		Hid
+		call oracle_tui#Hid() 
 		2d
 		resize 1
 
@@ -2775,6 +3095,10 @@ function! oracle_tui#ShowUpdateTitle()
 		if top_line <= 2
 			execute "normal! 2zt"
 		endif
+		if cur_line == 1
+			let cur_line = 2
+		endif
+		normal! gg
 		call cursor(cur_line,cur_col)
 		"Add the following line,Otherwise, they won't align horizontally
 		normal! zl
@@ -2784,9 +3108,13 @@ function! oracle_tui#ShowUpdateTitle()
 		call oracle_tui#UpdateMapHideTitleLines()
 
 		autocmd CursorMoved <buffer> call oracle_tui#UpdateHideTitleLines()
+
+		call feedkeys("lh", 'n')
+
+		"call oracle_tui#ReShowNullChar() 
 	else
 		let save_cursor = getpos('.')
-		let s:show_update_title_flag = 0
+		let t:show_update_title_flag = 0
 		wincmd k
 		q
 		"bwipeout
@@ -2804,12 +3132,13 @@ function! oracle_tui#ShowUpdateTitle()
 
 		autocmd! CursorMoved <buffer>
 		call oracle_tui#UnMapHideTitleLines()
+
+		call oracle_tui#ReShowNullChar() 
 	endif
 endfunction
 
-let s:show_view_title_flag = 0
 function! oracle_tui#ShowViewTitle()
-	if s:show_view_title_flag == 0
+	if !exists('t:show_view_title_flag') || t:show_view_title_flag == 0
 		if winwidth(0) < &columns
 			call oracle_tui#ShowErr("The title line is not available in a vertically split window")
 			return
@@ -2819,8 +3148,9 @@ function! oracle_tui#ShowViewTitle()
 		let cur_col = col('.')
 		let top_line = line("w0")
 
-		let s:show_view_title_flag = 1
-		set sbo=hor
+		let t:show_view_title_flag = 1
+		setlocal scb
+		setlocal sbo=hor
 		sp 
 		resize 3 
 		setlocal nocul
@@ -2830,6 +3160,7 @@ function! oracle_tui#ShowViewTitle()
 		"let &l:stl="%#Normal#".repeat('=',winwidth(0))
 		"highlight MyStatusLine ctermbg=Yellow ctermfg=Black
 		let &l:stl="%#Comment#".repeat('=',winwidth(0))
+		setlocal ve=all
 
 		wincmd j
 		if top_line <= 4
@@ -2846,7 +3177,7 @@ function! oracle_tui#ShowViewTitle()
 		autocmd CursorMoved <buffer> call oracle_tui#ViewHideTitleLines()
 	else
 		let save_cursor = getpos('.')
-		let s:show_view_title_flag = 0
+		let t:show_view_title_flag = 0
 		wincmd k
 		q
 
@@ -2865,6 +3196,10 @@ function! oracle_tui#ShowViewTitle()
 endfunction
 
 function! oracle_tui#ViewHideTitleLines()
+	if winnr('$') == 1
+		return
+	endif
+
     let top_line = line('w0')
 
     if top_line == 1
@@ -2880,6 +3215,10 @@ function! oracle_tui#ViewHideTitleLines()
 endfunction
 
 function! oracle_tui#UpdateHideTitleLines()
+	if winnr('$') == 1
+		return
+	endif
+
     let top_line = line('w0')
 
     if top_line == 1
@@ -2911,40 +3250,30 @@ function! oracle_tui#UnMapHideTitleLines()
 	nunmap <buffer>  <C-y>
 endfunction
 
-let s:show_nullchar_flag = 0
 function! oracle_tui#ShowNullChar()
-	if s:show_nullchar_flag == 0
+	if t:show_nullchar_flag == 0
 		syn match Substitute / / conceal cchar=-
-		let s:show_nullchar_flag = 1
+		let t:show_nullchar_flag = 1
+
+		echo "Enable null char display"
 	else
 		syn match Substitute / / conceal cchar= 
-		let s:show_nullchar_flag = 0
-		Hid
+		let t:show_nullchar_flag = 0
+		call oracle_tui#Hid()
+
+		echo "Disable null char display"
 	endif
 endfunction
 
 function! oracle_tui#ReShowNullChar()
-	if s:show_nullchar_flag == 1
+	if exists('t:show_nullchar_flag') && t:show_nullchar_flag == 1
 		syn match Substitute / / conceal cchar=-
 	endif
 endfunction
 
-let s:current_pipe_field = 0
-let s:current_pipe_line = 0
-let s:original_field_content = ''
 function! oracle_tui#PipeFieldEdit()
     " Get the current line content and cursor position
-	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
-
-	let pid = substitute(file, ".*-", "", "g")
-	let pid = substitute(pid, ".txt.new", "", "g")
-	let lob_file=$HOME."/.dbtmp/lob_res_".pid.".txt"
+	let pid = getpid()
     let current_line = getline('.')
     let cursor_col = col('.') - 1
 	let linenum = line('.')
@@ -2964,33 +3293,37 @@ function! oracle_tui#PipeFieldEdit()
     endfor
     
     " Save the current field index and line number
-    let s:current_pipe_field = current_field
-    let s:current_pipe_line = line('.')
-    let s:original_field_content = fields[current_field]
-	let s:original_field_content = substitute(s:original_field_content, " *$", "", "g")
-	"let s:original_field_content = substitute(s:original_field_content, "^ *", "", "g")
-	if s:field_types[current_field] == 96 
+	let current_idx_field = substitute(fields[0], ' ', '', 'g')
+    let current_field_num = current_field
+    let original_field_content = fields[current_field]
+	let original_field_content = substitute(original_field_content, " *$", "", "g")
+
+    let t:current_field_num = current_field
+    let t:current_pipe_line = line('.')
+
+	"let original_field_content = substitute(original_field_content, "^ *", "", "g")
+	if t:field_types[current_field] == 96 
 		"char/nchar
-	elseif s:field_types[current_field] != 1
-		let s:original_field_content = substitute(s:original_field_content, "^ *", "", "g")
-		let s:original_field_content = substitute(s:original_field_content, " *$", "", "g")
+	elseif t:field_types[current_field] != 1
+		let original_field_content = substitute(original_field_content, "^ *", "", "g")
+		let original_field_content = substitute(original_field_content, " *$", "", "g")
 	endif
+
+	let current_field_type = t:field_types[current_field]
 
     
     " Create a temporary buffer in a new tab (without saving to a file)
-	if (s:field_types[current_field] == 112 || 
-		\ s:field_types[current_field] == 8 ||
-		\ s:field_types[current_field] == 113 ||
-		\ s:field_types[current_field] == 24 ) 
-		\ && lob_file_flag == 1
+	if (t:field_types[current_field] == 112 || 
+		\ t:field_types[current_field] == 8 ||
+		\ t:field_types[current_field] == 113 ||
+		\ t:field_types[current_field] == 24 ) 
 		"Remove spaces
-		let s:original_field_content = substitute(s:original_field_content, " ", "", "g")
-		if s:original_field_content == ""
-			let s:tot_line_num = s:tot_line_num + 1
-			let lob_file = printf("lob_%d_%d.txt.new", pid,s:tot_line_num)
+		let original_field_content = substitute(original_field_content, " ", "", "g")
+		if original_field_content == ""
+			let lob_file = printf("upd_%d_lob_%s_%d.new", pid,t:seqno_arr[current_idx_field], current_field)
 			let lob_file=$HOME."/.dbtmp/".lob_file
 		else
-			let lob_file=substitute(s:original_field_content, "<", "", "g")
+			let lob_file=substitute(original_field_content, "<", "", "g")
 			let lob_file=substitute(lob_file, ">.*", "", "g")
 			let lob_file=$HOME."/.dbtmp/".lob_file
 		endif
@@ -2998,10 +3331,9 @@ function! oracle_tui#PipeFieldEdit()
 		"autocmd BufWriteCmd <buffer> redraw!|echo "Please press Ctrl+a to save"
 		"cnoremap <buffer> <expr> w oracle_tui#HandleWrite()
 		"cnoremap <buffer> <expr> x oracle_tui#HandleWrite_x()
-		cnoremap <buffer> <expr> <CR> oracle_tui#CheckSaveCommand()
 		inoremap <buffer> <C-A> <Nop>
 		"autocmd BufWriteCmd <buffer> redraw!|
-    	"		\ if expand('%') =~# '.txt.old$' |
+    	"		\ if expand('%') =~# '.old.upd$' |
     	"		\   echo "Please press Ctrl+a to save" |
     	"		\ else |
     	"		\   write |
@@ -3014,26 +3346,30 @@ function! oracle_tui#PipeFieldEdit()
 		inoremap <buffer> <C-A> <Nop>
 	endif
 
+	let b:original_field_content = original_field_content
+	let b:current_idx_field      = current_idx_field     
+	let b:current_field_num      = current_field_num     
+
 	setlocal nonu
 	"setlocal timeout
 	"setlocal ve=
+	cnoremap <buffer> <expr> <CR> oracle_tui#CheckSaveCommand()
     
 	let g:prompt_str = "Ctrl+a:Save changes  q:Discard changes"
 	setlocal laststatus=2
 	setlocal statusline=%{g:prompt_str}\ %=%l,%c-%v\ %{&fileencoding} 
-	if (s:field_types[current_field] == 112 ||
-	  	\ s:field_types[current_field] == 8 ||
-	  	\ s:field_types[current_field] == 113 ||
-	  	\ s:field_types[current_field] == 24 )
-		\ && lob_file_flag == 1
+	if (current_field_type == 112 ||
+	  	\ current_field_type == 8 ||
+	  	\ current_field_type == 113 ||
+	  	\ current_field_type == 24 )
     	" Map Ctrl+a to save and close
-    	nnoremap <buffer> <silent> <C-A> :SavePipeLobField<CR>
+    	nnoremap <buffer> <silent> <C-A> :call oracle_tui#SavePipeLobField()<CR>
 	else
     	" Fill in the original field content
-    	call setline(1, split(s:original_field_content, ''))
+    	call setline(1, split(original_field_content, ''))
     	
     	" Map Ctrl+a to save and close
-    	nnoremap <buffer> <silent> <C-A> :SavePipeField<CR>
+    	nnoremap <buffer> <silent> <C-A> :call oracle_tui#SavePipeField()<CR>
 		"echo "Press Ctrl+N to save changes; use :q to discard changes"
 		"let s:prompt_str = "Press Ctrl+a to save changes, :q to discard"
 		"setlocal ve=
@@ -3089,21 +3425,17 @@ function! oracle_tui#SavePipeField()
     
     "Update the original file 
 	let current_col = virtcol('.')
-    if exists('s:current_pipe_line') && exists('s:current_pipe_field')
-        let current_line = getline(s:current_pipe_line)
+    if exists('t:current_pipe_line') && exists('t:current_field_num')
+        let current_line = getline(t:current_pipe_line)
         let fields = split(current_line, '', 1)
-        let fields[s:current_pipe_field] = new_content
-        call setline(s:current_pipe_line, join(fields, ''))
+        let fields[t:current_field_num] = new_content
+        call setline(t:current_pipe_line, join(fields, ''))
 		call oracle_tui#AlignColumnReal() 
     endif
 	exe "normal! ".current_col."|"   
 	                                 
-	normal! ma
-	normal! gg
-	normal! `a
-    
     " Clear the variable
-    unlet! s:current_pipe_field s:current_pipe_line s:original_field_content
+    unlet! t:current_field_num t:current_pipe_line t:original_field_content
 endfunction
 
 function! oracle_tui#SavePipeLobField()
@@ -3116,36 +3448,41 @@ function! oracle_tui#SavePipeLobField()
 			let new_file=substitute(file, "old$", "new", "g")
 			execute "w! "new_file
 			execute "e!"
-    		let new_content = substitute(s:original_field_content, "old>", "new>", "g") 
+    		let new_content = substitute(b:original_field_content, "old>", "new>", "g") 
 			"let new_content = printf("%-30s", new_content)
 		else
-			if s:original_field_content == ''
+			if b:original_field_content == ''
 				let file=substitute(file, ".*/", "", "g")
     			let new_content = printf("<%s>", file)
 			endif
 
 			execute "w!"
 		endif
+
+		let idx = printf("%s,%d", b:current_idx_field, b:current_field_num)
+		"let s:tot_line_num += 1
 	endif
 
     " Close the current tab
     tabclose
 
+	let t:field_lob_content[idx] = new_content 
+
 	setlocal laststatus=1
     
     " Update the original file
-    if exists('s:current_pipe_line') && exists('s:current_pipe_field')
+    if exists('t:current_pipe_line') && exists('t:current_field_num')
 		if new_content != ""
-        	let current_line = getline(s:current_pipe_line)
+        	let current_line = getline(t:current_pipe_line)
         	let fields = split(current_line, '', 1)
-        	let fields[s:current_pipe_field] = new_content
-        	call setline(s:current_pipe_line, join(fields, ''))
+        	let fields[t:current_field_num] = new_content
+        	call setline(t:current_pipe_line, join(fields, ''))
 			call oracle_tui#AlignColumnReal() 
 		endif
     endif
     
     " Clear the variable
-    unlet! s:current_pipe_field s:current_pipe_line s:original_field_content
+    unlet! t:current_field_num t:current_pipe_line t:original_field_content
 endfunction
 
 " Cursor positioning function
@@ -3226,27 +3563,20 @@ function! oracle_tui#CheckUpdateCommand() abort
     let type = getcmdtype()
 
     if type == ':' 
-		if s:current_update_file == expand("%")
+		if t:current_update_file == expand('%:p') 
     		if cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIecn#pl]*[ \t]*$' "s/aaa/bbb/g
     			if cmd =~# 's[ \t]*//[^/]*/[giIecn#pl]*[ \t]*$'
-        			let modified_cmd = 'ShowErr 无被替换字符'
+        			let modified_cmd = "call oracle_tui#ShowErr('No characters to replace')"
     			elseif cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIen#pl]*c[giIen#pl]*[ \t]*$' "s/aaa/bbb/g
-        			let modified_cmd = 'ShowErr 不能带参数c'
+        			let modified_cmd = "call oracle_tui#ShowErr('Cannot use parameter c')"
 				else
         			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*\)/\([giIecn#pl]*$\)', 'MySubstitute/\\%>19c\1/\2/\3', '')
         			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
-					"Replace the carriage return with NBSP character, otherwise it cannot be passed through
-        			let modified_cmd = substitute(modified_cmd, '', ' ', '')
 				endif
-        		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
-				"call feedkeys("\<C-U>ShowErr Invalid command.\<CR>", 'n')
-				"In this function, the file content cannot be modified. Directly calling call oracle_tui#AlignColumn() will cause an error. You can call it using the following method
-				"The statements after the feedkeys function will not be called, but using timer_start below can call them
-				"call timer_start(0, {-> oracle_tui#AlignColumn()})
         		return "\<C-U>" . modified_cmd . "\<CR>"
     		elseif cmd =~# 's[ \t]*/[^/]*/[^/]*$' "s/aaa/bbb
     			if cmd =~# 's[ \t]*//[^/]*$'
-        			let modified_cmd = 'ShowErr 无被替换字符'
+        			let modified_cmd = "call oracle_tui#ShowErr('No characters to replace')"
 				else
         			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*$\)', 'MySubstitute/\\%>19c\1/\2', '')
         			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
@@ -3255,7 +3585,7 @@ function! oracle_tui#CheckUpdateCommand() abort
         		return "\<C-U>" . modified_cmd . "\<CR>"
 			elseif cmd =~# 's[ \t]*/[^/]*[ \t]*$' "s/aaa
 			    if cmd =~# 's[ \t]*/[ \t]*$'
-        			let modified_cmd = 'ShowErr 无被替换字符'
+        			let modified_cmd = "call oracle_tui#ShowErr('No characters to replace')"
 				else
         			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*[ \t]*$\)', 'MySubstitute/\\%>19c\1', '')
         			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
@@ -3263,18 +3593,14 @@ function! oracle_tui#CheckUpdateCommand() abort
         		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
         		return "\<C-U>" . modified_cmd . "\<CR>"
 			endif
-			"For example, commands ending with 's' such as ls, messages, buffers, etc., are ignored.
-			"elseif cmd =~# 's[ \t]*$' "s
-        	"	"let modified_cmd = substitute(cmd, 's[ \t]*$', 'MySubstitute', '')
-        	"	let modified_cmd = 'ShowErr No parameters'
-        	"	call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
 		endif
 
 		if winnr('$') > 1 
-			if s:show_update_title_flag == 1 
+			if t:show_update_title_flag == 1 
 				if cmd =~# '^[ \t]*q[ \t]*$'
-        		    let modified_cmd = 'qall'
-        			return "\<C-U>" . modified_cmd . "\<CR>"
+        		    "let modified_cmd = 'qall'
+        	    	let modified_cmd = 'tabclose'
+        			return "\<C-U>w\<CR>:" . modified_cmd . "\<CR>:call feedkeys(\":echo 'Interrupt update!'\\<CR>\", 'n')\<CR>"
 				elseif cmd =~# '^[ \t]*q![ \t]*$'
         		    let modified_cmd = 'qall!'
         			return "\<C-U>" . modified_cmd . "\<CR>"
@@ -3294,14 +3620,14 @@ function! oracle_tui#CheckUpdateCommand() abort
     				return "\<CR>"
         		endif
 			else
-				if s:show_update_vertical_flag == 1
+				if t:show_update_vertical_flag == 1
 					if cmd =~# '^[ \t]*q[ \t]*$' ||
 						\ cmd =~# '^[ \t]*q![ \t]*$' ||
 						\ cmd =~# '^[ \t]*wq[ \t]*$' ||
 						\ cmd =~# '^[ \t]*wq![ \t]*$' ||
 						\ cmd =~# '^[ \t]*x[ \t]*$' ||
 						\ cmd =~# '^[ \t]*x![ \t]*$'
-						let s:show_update_vertical_flag = 0
+						let t:show_update_vertical_flag = 0
 						if line('$') > 1
     						return "\<CR>:call oracle_tui#ShowUpdateTitle()\<CR>"
 						endif
@@ -3323,9 +3649,13 @@ function! oracle_tui#CheckSaveCommand() abort
     let cmd = getcmdline()
     let type = getcmdtype()
 
-    if type == ':' && (cmd =~# '^[ \t]*w'||cmd =~# '^[ \t]*x')
-        let modified_cmd = ":call oracle_tui#ShowErr('Press Ctrl+a to save changes,:q to discard')"
-        return "\<C-U>" . modified_cmd . "\<CR>"
+    if type == ':' 
+		if cmd =~# '^[ \t]*w'||cmd =~# '^[ \t]*x'
+        	let modified_cmd = ":call oracle_tui#ShowErr('Press Ctrl+A to save changes. Use :q to discard changes')"
+        	return "\<C-U>" . modified_cmd . "\<CR>"
+		else
+    		return "\<CR>"
+		endif
 	else
     	"Execute the original command
     	return "\<CR>"
@@ -3343,45 +3673,203 @@ function! oracle_tui#CheckListObjViewCommand() abort
     return "\<CR>"
 endfunction
 
+function! oracle_tui#TabCloseUpdateAll()
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		let lob_file_flag = 1
+	else
+		let lob_file_flag = 0
+	endif
+
+    let old_update_file = substitute(t:current_update_file, ".new$", ".old", '')
+
+    let buffers = []
+    for win in tabpagebuflist()
+        call add(buffers, win)
+    endfor
+    
+    tabclose!
+    
+    for buf in buffers
+        if bufexists(buf) && buflisted(buf)
+            execute 'bdelete! ' . buf
+        endif
+    endfor
+
+    let buf_num = bufnr(old_update_file)
+    if buf_num != -1
+        sil! execute 'bdelete! ' . buf_num
+    endif
+
+	if lob_file_flag == 1
+    	let pattern = '\.dbtmp/upd_' . getpid() . '_lob'
+    	let buf_list = filter(range(1, bufnr('$')), 'bufname(v:val) =~# pattern')
+    	if empty(buf_list)
+    	    return
+    	endif
+    	for buf in buf_list
+    	    sil! execute 'bdelete!' buf
+    	endfor
+	endif
+endfunction
+
+function! oracle_tui#TabCloseViewAll()
+    let buffers = []
+    for win in tabpagebuflist()
+        call add(buffers, win)
+    endfor
+    
+    tabclose!
+    
+    for buf in buffers
+        if bufexists(buf) && buflisted(buf)
+            execute 'bdelete! ' . buf
+        endif
+    endfor
+endfunction
+
 function! oracle_tui#CheckMainCommand() abort
     let cmd = getcmdline()
     let type = getcmdtype()
 
-    if type == ':' && (cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*wq'||cmd =~# '^[ \t]*x')
-		if exists('w:main_window_flag') && w:main_window_flag == 1
-        	if oracle_tui#CheckIfCommit()
-        	    let modified_cmd = ":call oracle_tui#ShowErr('Cannot exit with uncommitted transactions.Press F2/F6 to rollback or commit')"
-				"feedkeys does not work properly in Vim version 7.2
+    if type == ':' 
+		if exists('w:update_window_flag') && w:update_window_flag == 1 &&
+			\ t:current_update_file == expand('%:p') 
+
+    		if cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIecn#pl]*[ \t]*$' "s/aaa/bbb/g
+    			if cmd =~# 's[ \t]*//[^/]*/[giIecn#pl]*[ \t]*$'
+        			let modified_cmd = "call oracle_tui#ShowErr('No characters to replace')"
+    			elseif cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIen#pl]*c[giIen#pl]*[ \t]*$' "s/aaa/bbb/g
+        			let modified_cmd = "call oracle_tui#ShowErr('Cannot use parameter c')"
+				else
+        			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*\)/\([giIecn#pl]*$\)', 'MySubstitute/\\%>19c\1/\2/\3', '')
+        			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
+				endif
+        		return "\<C-U>" . modified_cmd . "\<CR>"
+    		elseif cmd =~# 's[ \t]*/[^/]*/[^/]*$' "s/aaa/bbb
+    			if cmd =~# 's[ \t]*//[^/]*$'
+        			let modified_cmd = "call oracle_tui#ShowErr('No characters to replace')"
+				else
+        			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*$\)', 'MySubstitute/\\%>19c\1/\2', '')
+        			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
+				endif
+			elseif cmd =~# 's[ \t]*/[^/]*[ \t]*$' "s/aaa
+			    if cmd =~# 's[ \t]*/[ \t]*$'
+        			let modified_cmd = "call oracle_tui#ShowErr('No characters to replace')"
+				else
+        			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*[ \t]*$\)', 'MySubstitute/\\%>19c\1', '')
+        			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
+				endif
         		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
         		return "\<C-U>" . modified_cmd . "\<CR>"
-        	endif
+			endif
 		endif
-    endif
 
-    if type == ':' 
-		if (tabpagenr('$') > 1 || winnr('$') > 1) && 
-			\ exists('w:main_window_flag') && w:main_window_flag == 1
-			if cmd =~# '^[ \t]*q[ \t]*$'
-        	    let modified_cmd = 'qall'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*q![ \t]*$'
-        	    let modified_cmd = 'qall!'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*wq[ \t]*$'
-        	    let modified_cmd = 'wqall'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*wq![ \t]*$'
-        	    let modified_cmd = 'wqall!'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*x[ \t]*$'
-        	    let modified_cmd = 'xall'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*x![ \t]*$'
-        	    let modified_cmd = 'xall!'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
+		if exists('w:main_window_flag') && w:main_window_flag == 1
+    		if cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*wq'||cmd =~# '^[ \t]*x'
+    	    	if oracle_tui#CheckIfCommit()
+    	    	    let modified_cmd = ":call oracle_tui#ShowErr('Cannot exit with uncommitted transactions.Press F2/F6 to rollback or commit')"
+					"feedkeys does not work properly in Vim 7.2.
+    	    		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
+    	    		return "\<C-U>" . modified_cmd . "\<CR>"
+    	    	endif
+			endif
+
+			if tabpagenr('$') > 1 || winnr('$') > 1 
+				if cmd =~# '^[ \t]*q[ \t]*$'
+        		    let modified_cmd = 'qall'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*q![ \t]*$'
+        		    let modified_cmd = 'qall!'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*wq[ \t]*$'
+        		    let modified_cmd = 'wqall'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*wq![ \t]*$'
+        		    let modified_cmd = 'wqall!'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*x[ \t]*$'
+        		    let modified_cmd = 'xall'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*x![ \t]*$'
+        		    let modified_cmd = 'xall!'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+        		endif
+			endif
+		elseif (winnr('$') > 1) && 
+			\ exists('t:result_tab_flag') && t:result_tab_flag == 1
+			if t:show_view_vertical_flag == 1
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+					let t:show_view_vertical_flag = 0
+    				return "\<CR>:call oracle_tui#ShowViewTitle()\<CR>"
+        		endif
 			else
-    			return "\<CR>"
-        	endif
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+
+					if cmd =~# '^[ \t]*q[ \t]*$' && &modified
+        				return "\<C-U>call oracle_tui#ShowErr('No write since last change (add ! to override)')\<CR>"
+					endif
+
+					w
+					execute "setlocal laststatus=" . g:save_laststatus
+					execute "setlocal statusline=" . escape(g:save_statusline, ' ')
+
+					autocmd! DBView
+
+					let &mouse = s:save_mouse
+					let &showtabline = s:save_showtabline
+					call delete(t:current_result_file)
+					call delete(t:current_sql_file)
+
+        			return "\<C-U>call oracle_tui#TabCloseViewAll()\<CR>"
+        		endif
+			endif
+		elseif (winnr('$') > 1) && 
+			\ exists('t:update_tab_flag') && t:update_tab_flag == 1
+			if t:show_update_vertical_flag == 1
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+					let t:show_update_vertical_flag = 0
+    				return "\<CR>:call oracle_tui#ShowUpdateTitle()\<CR>"
+        		endif
+			else
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+
+					if cmd =~# '^[ \t]*q[ \t]*$' && &modified
+        				return "\<C-U>call oracle_tui#ShowErr('No write since last change (add ! to override)')\<CR>"
+					endif
+
+					w
+					execute "setlocal laststatus=" . g:save_laststatus
+					execute "setlocal statusline=" . escape(g:save_statusline, ' ')
+
+					autocmd! DBUpdate
+
+					let pid=getpid()
+
+					let &mouse = s:save_mouse
+					let &showtabline = s:save_showtabline
+					call delete(t:current_update_file)
+					call system('rm -f ~/.dbtmp/upd_'.pid.'[._]*')
+					"echo "Quit update!"
+
+        			return "\<C-U>call oracle_tui#TabCloseUpdateAll()\<CR>:echo 'Quit update!'\<CR>"
+        		endif
+			endif
 		else
     		return "\<CR>"
 		endif
@@ -3391,12 +3879,12 @@ function! oracle_tui#CheckMainCommand() abort
     return "\<CR>"
 endfunction
 
-function! oracle_tui#ViewCommandLine() abort
+function! oracle_tui#CheckViewCommand() abort
     let cmd = getcmdline()
     let type = getcmdtype()
 
     if type == ':' 
-		if s:show_view_title_flag == 1
+		if t:show_view_title_flag == 1
 			if cmd =~# '^[ \t]*q[ \t]*$'
         	    let modified_cmd = 'qall'
         		return "\<C-U>" . modified_cmd . "\<CR>"
@@ -3418,14 +3906,14 @@ function! oracle_tui#ViewCommandLine() abort
 			else
     			return "\<CR>"
         	endif
-		elseif s:show_view_vertical_flag == 1
+		elseif t:show_view_vertical_flag == 1
 			if cmd =~# '^[ \t]*q[ \t]*$' ||
 				\ cmd =~# '^[ \t]*q![ \t]*$' ||
 				\ cmd =~# '^[ \t]*wq[ \t]*$' ||
 				\ cmd =~# '^[ \t]*wq![ \t]*$' ||
 				\ cmd =~# '^[ \t]*x[ \t]*$' ||
 				\ cmd =~# '^[ \t]*x![ \t]*$'
-				let s:show_view_vertical_flag = 0
+				let t:show_view_vertical_flag = 0
     			return "\<CR>:call oracle_tui#ShowViewTitle()\<CR>"
 			else
     			return "\<CR>"
@@ -3438,7 +3926,7 @@ function! oracle_tui#ViewCommandLine() abort
 endfunction
 
 function! oracle_tui#AfterSubstitute(start_line,end_line)
-    let s:visual_insert = {
+    let t:visual_insert = {
         \ 'start_line': a:start_line,
         \ 'end_line': a:end_line
         \ }
@@ -3467,7 +3955,7 @@ function! oracle_tui#SubstituteWrapperBak(line1, line2, args) abort
     endtry
 endfunction
 
-let s:field_lob_content = {} 
+"let s:field_lob_content = {} 
 
 "Save the lob field file name before replacement
 function! oracle_tui#SaveLobContent(start_line, end_line) abort
@@ -3478,19 +3966,21 @@ function! oracle_tui#SaveLobContent(start_line, end_line) abort
 			"First, remove the trailing NBSP characters, then replace the remaining NBSP characters with spaces
     		"let field = substitute(fields[i], ' *$', '', 'g')
     		"let field = substitute(field, ' ', ' ', 'g')
+			if i == 0
+    			let idx_field = substitute(fields[i], ' ', '', 'g')
+			endif
 
-			if (s:field_types[i] == 112 ||
-				\ s:field_types[i] == 8 ||
-				\ s:field_types[i] == 113 ||
-				\ s:field_types[i] == 24 )
-				let idx = printf("'%d,%d'", lnum, i)
-				let s:field_lob_content[idx] = fields[i]
+			if (t:field_types[i] == 112 ||
+				\ t:field_types[i] == 8 ||
+				\ t:field_types[i] == 113 ||
+				\ t:field_types[i] == 24 )
+				let idx = printf("%s,%d", idx_field, i)
+				let t:field_lob_content[idx] = fields[i]
 			endif
     	endfor
     endfor
 endfunction
 
-let s:lob_substitute_flag = 0
 function! oracle_tui#SubstituteWrapper(line1, line2, args) abort
 	"Skip the modification of the first line
 	let v:errmsg = ''
@@ -3504,21 +3994,21 @@ function! oracle_tui#SubstituteWrapper(line1, line2, args) abort
 		let start_line = 2
 	endif
 
-	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
-
-	if lob_file_flag == 1
-		let s:lob_substitute_flag = 1
-    	call oracle_tui#SaveLobContent(start_line, end_line)
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		let t:lob_substitute_flag = 1
+    	"call oracle_tui#SaveLobContent(start_line, end_line)
 	endif
 
-	"When replacing the carriage return, prepend a rowid field column (the carriage return is replaced with an NBSP character, otherwise it cannot be passed through)
-    let sub_str = substitute(a:args, ' ', 'XXXXXXXXXXXXXXXXXX', '')
+	"let t:max_seqno = t:max_seqno + 1
+	"let idx_field = "NEW_".t:max_seqno
+	"let t:seqno_arr[idx_field] = t:max_seqno
+
+	"let idx_field = idx_field.repeat(' ', 18 - strwidth(idx_field))
+	"let idx_field = ''.idx_field.''
+    "let sub_str = substitute(a:args, ' ', 'XXXXXXXXXXXXXXXXXX', '')
+    "let sub_str = substitute(a:args, ' ', idx_field, '')
+
+	let sub_str = a:args
     silent! execute start_line . ',' . end_line . 's' . sub_str
 
     " Check for errors
@@ -3560,7 +4050,7 @@ endfunction
 
 function! oracle_tui#MyDeleteMapping()
     " save old operatorfunc
-    let s:old_opfunc = &operatorfunc
+    let t:old_opfunc = &operatorfunc
 
     " Set a custom function
     set operatorfunc=MyDeleteOperator
@@ -3582,11 +4072,9 @@ function! MyDeleteOperator(type, ...)
 
 
     " Restore the original operatorfunc
-    let &operatorfunc = s:old_opfunc
+    let &operatorfunc = t:old_opfunc
 endfunction
 
-let s:prompt_flag = 0
-let s:cur_field = 0
 function! oracle_tui#ShowPrompt()
     let current_line = getline('.')
     let cursor_col = col('.') - 1
@@ -3604,52 +4092,44 @@ function! oracle_tui#ShowPrompt()
         let pos += len(fields[i]) + 1
     endfor
 
-	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
-
-	if lob_file_flag == 1 && (s:field_types[current_field] == 112 ||
-		\ s:field_types[current_field] == 8 ||   
-		\ s:field_types[current_field] == 113 ||   
-		\ s:field_types[current_field] == 24 )
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " must press Ctrl+a to edit or view"
-			let s:prompt_flag = s:field_types[current_field]
+	if t:field_types[current_field] == 112 ||
+		\ t:field_types[current_field] == 8 ||   
+		\ t:field_types[current_field] == 113 ||   
+		\ t:field_types[current_field] == 24 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " must press Ctrl+a to edit or view"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
-	elseif s:field_types[current_field] == 12 
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " FORMAT IS yyyy-mm-dd hh24:mi:ss"
-			let s:prompt_flag = s:field_types[current_field]
+	elseif t:field_types[current_field] == 12 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " FORMAT IS yyyy-mm-dd hh24:mi:ss"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
-	elseif s:field_types[current_field] == 180 
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF"
-			let s:prompt_flag = s:field_types[current_field]
+	elseif t:field_types[current_field] == 180 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
-	elseif s:field_types[current_field] == 181 
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF TZR"
-			let s:prompt_flag = s:field_types[current_field]
+	elseif t:field_types[current_field] == 181 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF TZR"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
 	else
-		if s:prompt_flag > 0
+		if t:prompt_flag > 0
 			redraw!
-			let s:prompt_flag = 0
+			let t:prompt_flag = 0
 		endif
 	endif
-	let s:cur_field = current_field
+	let t:cur_field = current_field
 endfunction
 
 function! oracle_tui#GentleCheck()
@@ -3750,21 +4230,31 @@ function! oracle_tui#GetCurrentChar()
         return ''
     endif
     
-    " 使用正则匹配当前字符（包括多字节）
     let before = strpart(line, 0, col_pos)
     let after = strpart(line, col_pos)
     
-    " 匹配第一个字符（支持多字节）
     let char = matchstr(after, '^.')
 	return char
 endfunction
 
 function! oracle_tui#Replace_r()
+
 	let l:current_char = oracle_tui#GetCurrentChar()
 
 	if l:current_char == ''
-		call oracle_tui#ShowErr("不能修改分隔符")
+		call oracle_tui#ShowErr("Cannot change the delimiter")
 		return ''
+	endif
+
+	let current_column_num = oracle_tui#GetCurrentColumn() - 1
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		if t:field_types[current_column_num] == 112 ||
+		\   t:field_types[current_column_num] == 8 || 
+		\   t:field_types[current_column_num] == 113 || 
+		\   t:field_types[current_column_num] == 24
+			call oracle_tui#ShowErr("Connot change lob column")
+			return ''
+		endif
 	endif
 
 	if  strwidth(l:current_char) > 1
@@ -3905,13 +4395,16 @@ endfun
 
 
 function! oracle_tui#SetMapView()
-	command! ReduceColumn call oracle_tui#ReduceColumn()
-	command! CutColumn call oracle_tui#CutColumn()
-	command! PasteColumn call oracle_tui#PasteColumn()
-	command! ShowSql call oracle_tui#ShowSql()
-	command! Crtsql call oracle_tui#Crtsql()
-	command! DBViewHelp call oracle_tui#DBViewHelp()
-	command! -nargs=* Filter call oracle_tui#Filter(<q-args>)
+	"setlocal splitright
+
+	"command! -bar -buffer ReduceColumn call oracle_tui#ReduceColumn()
+	"command! -bar -buffer CutColumn call oracle_tui#CutColumn()
+	"command! -bar -buffer PasteColumn call oracle_tui#PasteColumn()
+	"command! -bar -buffer ShowSql call oracle_tui#ShowSql()
+	"command! -bar -buffer DBViewHelp call oracle_tui#DBViewHelp()
+
+	command! -bar -buffer Crtsql call oracle_tui#Crtsql()
+	command! -bar -buffer -nargs=* Filter call oracle_tui#Filter(<q-args>)
 
 	nnoremap <silent> <buffer> J 15j
 	nnoremap <silent> <buffer> K 15k
@@ -3931,7 +4424,7 @@ function! oracle_tui#SetMapView()
 	noremap <silent> <buffer> { zH
 	noremap <silent> <buffer> } zL
 
-	noremap <silent> <buffer> <C-W>k <Nop>
+	noremap <silent> <buffer> <C-W> <Nop>
 	
 	"Split the window horizontally and display column names.
 	"nnoremap <silent> <buffer>  wh :WH<CR>
@@ -3940,11 +4433,11 @@ function! oracle_tui#SetMapView()
 	nnoremap <silent> <buffer> wv :call oracle_tui#ViewVerSplit()<CR>
 	"<F1>
 	"map OP :Help<CR>
-	nnoremap <silent> <buffer> OP :DBViewHelp<CR>
+	nnoremap <silent> <buffer> OP :call oracle_tui#DBViewHelp()<CR>
 	
-	nnoremap <silent> <buffer>  :ReduceColumn<CR>
-	nnoremap <silent> <buffer> \x :CutColumn<CR>
-	nnoremap <silent> <buffer> \p :PasteColumn<CR>
+	nnoremap <silent> <buffer> <C-X> :call oracle_tui#ReduceColumn()<CR>
+	nnoremap <silent> <buffer> \x :call oracle_tui#CutColumn()<CR>
+	nnoremap <silent> <buffer> \p :call oracle_tui#PasteColumn()<CR>
 	nnoremap <silent> <buffer> <C-\> :call oracle_tui#SumColumn()<CR>
 	vnoremap <silent> <buffer> <C-\> :call oracle_tui#SumVisual()<CR>
 	
@@ -3956,7 +4449,7 @@ function! oracle_tui#SetMapView()
 	
 	"<F11>
 	"nmap [23~ :ShowSql<CR>
-	nnoremap <silent> <buffer> <expr> [23~ expand("%") =~# ".txt.new$" ? '' : ':ShowSql'
+	nnoremap <silent> <buffer> [23~ :call oracle_tui#ShowSql()<CR>
 	
 	"let mapleader = "|"
 	"Sort by number.
@@ -3968,7 +4461,7 @@ function! oracle_tui#SetMapView()
 	"Generate SQL statement.
 	"nnoremap <silent> <buffer> \sql :Crtsql<CR>
 
-	cnoremap <silent> <expr> <CR> oracle_tui#ViewCommandLine()
+	"cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckViewCommand()
 
 	" Map the TAB key to the function of jumping to the next field.
 	nnoremap <silent> <buffer> <Tab> :call oracle_tui#JumpToNextField()<CR>
@@ -3985,37 +4478,40 @@ function! oracle_tui#SetMapView()
 endfun
 
 function! oracle_tui#SetMapUpdate()
-	let s:current_update_file = expand('%')
+	setlocal splitright
+
+	"let t:current_update_file = expand('%')
 	setlocal t_BE=
 	set diffopt-=closeoff
-	command! Update call oracle_tui#Update()
-	command! Hid  call oracle_tui#Hid()
-	command! ShowNullChar  call oracle_tui#ShowNullChar()
-	command! NoHid  call oracle_tui#NoHid()
-	command! EditColumnAfter call oracle_tui#EditColumnAfter()
-	command! EditColumnAfter2 call oracle_tui#EditColumnAfter2()
-	command! JumpNextColumn call oracle_tui#JumpNextColumn()
-	command! EditColumnBefore call oracle_tui#EditColumnBefore()
-	command! JumpBeforeColumn call oracle_tui#JumpBeforeColumn()
-	command! EditColumnBefore2 call oracle_tui#EditColumnBefore2()
-	command! NewLine call oracle_tui#NewLine()
-	command! -range ClearCont <line1>,<line2>s/[^]/ /g<bar>normal! 0
-	command! DBModifyHelp call oracle_tui#DBModifyHelp()
-	command! PipeFieldEdit call oracle_tui#PipeFieldEdit()
-	command! SavePipeField call oracle_tui#SavePipeField()
-	command! SavePipeLobField call oracle_tui#SavePipeLobField()
+	"command! -bar -buffer Update call oracle_tui#Update()
+	"command! -bar -buffer Hid  call oracle_tui#Hid()
+	"command! -bar -buffer ShowNullChar  call oracle_tui#ShowNullChar()
+	"command! -bar -buffer NoHid  call oracle_tui#NoHid()
+	"command! -bar -buffer EditColumnAfter call oracle_tui#EditColumnAfter()
+	"command! -bar -buffer EditColumnAfter2 call oracle_tui#EditColumnAfter2()
+	"command! -bar -buffer JumpNextColumn call oracle_tui#JumpNextColumn()
+	"command! -bar -buffer EditColumnBefore call oracle_tui#EditColumnBefore()
+	"command! -bar -buffer JumpBeforeColumn call oracle_tui#JumpBeforeColumn()
+	"command! -bar -buffer EditColumnBefore2 call oracle_tui#EditColumnBefore2()
+	"command! -bar -buffer NewLine call oracle_tui#NewLine()
+	"command! -bar -buffer -range ClearCont <line1>,<line2>s/[^]/ /g<bar>normal! 0
+	"command! -bar -buffer DBModifyHelp call oracle_tui#DBModifyHelp()
+	"command! -bar -buffer PipeFieldEdit call oracle_tui#PipeFieldEdit()
+	"command! -bar -buffer SavePipeField call oracle_tui#SavePipeField()
+	"command! -bar -buffer SavePipeLobField call oracle_tui#SavePipeLobField()
 	"command! -range -nargs=* MySubstitute <line1>,<line2>s<args> | call oracle_tui#AfterSubstitute(<line1>, <line2>)
-	command! -range -nargs=* MySubstitute call oracle_tui#SubstituteWrapper(<line1>, <line2>, <q-args>)
-	command! -nargs=* ShowErr call oracle_tui#ShowErr(<f-args>)
+	"command! -nargs=* ShowErr call oracle_tui#ShowErr(<f-args>)
 
 	"command! -range -nargs=* Substitute execute printf('%d,%d s%s',
     "	\ (<line1> == 1 ? 2 : <line1>),
     "	\ <line2>,
     "	\ <q-args>) |call oracle_tui#AfterSubstitute(<line1>, <line2>) 
 
+	command! -range -nargs=* MySubstitute call oracle_tui#SubstituteWrapper(<line1>, <line2>, <q-args>)
+
 	"cnoremap <buffer> <expr> s/ oracle_tui#ChangeCmd()
 	"cnoremap <buffer> <expr> s oracle_tui#ChangeCmd_s()
-	cnoremap <silent> <expr> <CR> oracle_tui#CheckUpdateCommand()
+	"cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckUpdateCommand()
 
 	nnoremap <silent> <buffer> J 15j
 	nnoremap <silent> <buffer> K 15k
@@ -4053,26 +4549,30 @@ function! oracle_tui#SetMapUpdate()
 		noremap <silent> <buffer> zH <Nop>
 	endif
 
-	noremap <silent> <buffer> <C-W>k <Nop>
+	noremap <silent> <buffer> <C-W> <Nop>
+	"noremap <silent> <buffer> <C-W>k <Nop>
+	"noremap <silent> <buffer> <C-W>w <Nop>
+	"noremap <silent> <buffer> <C-W>p <Nop>
+	"noremap <silent> <buffer> <C-W><C-W> <Nop>
+	"noremap <silent> <buffer> <C-W><C-P> <Nop>
 
 	call oracle_tui#ProtectFirstLine()
 
 	nnoremap <buffer> <silent> <expr> r oracle_tui#Replace_r()
-	"noremap <buffer> <silent>  <expr> \cl line('.') > 1 ? ':ClearCont' : ''
-	nnoremap <buffer> <silent> <Tab> :JumpNextColumn<CR>
+	"noremap <buffer> <silent>  <expr> \cl line('.') > 1 ? ':ClearCont<CR>' : ''
+	nnoremap <buffer> <silent> <Tab> :call oracle_tui#JumpNextColumn()<CR>
 	inoremap <buffer> <silent> <Tab> :call oracle_tui#EditColumnAfter2()<CR>
 	"nnoremap <buffer> <silent>  :EditColumnAfter<CR>
 	inoremap <buffer> <silent> <C-T> l:call oracle_tui#EditColumnBefore2()<CR>
 	"nnoremap <buffer> <silent>  :EditColumnBefore<CR>
-	nnoremap <buffer> <silent> <C-T> :JumpBeforeColumn<CR>
+	nnoremap <buffer> <silent> <C-T> :call oracle_tui#JumpBeforeColumn()<CR>
 	inoremap <buffer> <silent> <CR> <Esc>:call oracle_tui#AlignColumnReal()<CR>
-	nnoremap <buffer> <silent>  o o:NewLine<CR>
+	nnoremap <buffer> <silent>  o o:call oracle_tui#NewLine()<CR>
 	"nnoremap <buffer> <C-A> call oracle_tui#PipeFieldEdit()<CR>
-	nnoremap <buffer> <silent> <C-A> :PipeFieldEdit<CR>
-	inoremap <buffer> <silent> <C-A> l:PipeFieldEdit<CR>
+	nnoremap <buffer> <silent> <C-A> :call oracle_tui#PipeFieldEdit()<CR>
+	inoremap <buffer> <silent> <C-A> l:call oracle_tui#PipeFieldEdit()<CR>
 
-	nnoremap <buffer> <silent> <expr> O line('.')==1 ? '' : 'O:NewLine'
-	"nnoremap <buffer> <silent>  O O:NewLine<CR>
+	nnoremap <buffer> <silent> <expr> O line('.')==1 ? '' : 'O:call oracle_tui#NewLine()<CR>'
 	
 	"Split the window horizontally and display column names.
 	"nnoremap <silent> <buffer>  wh :HorSplitHeader<CR>
@@ -4085,7 +4585,7 @@ function! oracle_tui#SetMapUpdate()
 	endif
 	"<F1>
 	"map OP :Help<CR>
-	nnoremap <silent> <buffer>  OP :DBModifyHelp<CR>
+	nnoremap <silent> <buffer>  OP :call oracle_tui#DBModifyHelp()<CR>
 
 	"<F3> Freeze/Unfreeze the title bar
 	nnoremap <buffer> <silent>  OR :call oracle_tui#ShowUpdateTitle()<CR>
@@ -4100,8 +4600,7 @@ function! oracle_tui#SetMapUpdate()
 	"nnoremap <buffer> <silent>  [20~ :AlignColumn<CR>
 
 	"<F12>
-	"nmap [24~ :Update<CR>
-	nnoremap <silent> <buffer>  [24~ :Update<CR>
+	nnoremap <silent> <buffer>  [24~ :call oracle_tui#Update()<CR>
 
 	inoremap <buffer> <silent> <Esc> <Esc>:call oracle_tui#AlignColumnReal()<CR>
 
@@ -4163,6 +4662,7 @@ function! oracle_tui#SetLocal()
 	setlocal cul
 	setlocal nonu
 	setlocal nohlsearch
+    setlocal noswapfile
 	if &t_Co == 0 || empty(&t_Sf) || empty(&t_Sb)
 		set t_Co=8
 		set t_Sf=[3%p1%dm
@@ -4184,13 +4684,14 @@ function! oracle_tui#SetEnv()
 	setlocal sbo=hor
 	setlocal nonu
 	setlocal nohlsearch  
+    setlocal noswapfile
 endfun
 
 function! oracle_tui#SetAutocmdView()
 	augroup DBView
 		autocmd!
-		au VimEnter <buffer> echo "[/{ Move left [/} right j/J down k/K up F1 for help"
-		au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		"au VimEnter <buffer> echo "[/{ Move left [/} right j/J down k/K up F1 for help"
+		"au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
 		"After executing :e, the cursor jumps to the first line. 
 		"Use the following method to solve this problem.
 		autocmd BufReadPost <buffer> call feedkeys("lh", 'n')
@@ -4209,23 +4710,24 @@ function! oracle_tui#SetAutocmdUpdate()
 		au BufNewFile,BufRead,BufEnter,VimEnter  <buffer> :call oracle_tui#Hid()
 		"au BufNewFile,BufRead,BufEnter,VimEnter  <buffer> :call ShowDiff()
 
-		if v:version >= 800
-			au VimEnter <buffer> echo "[/{ Move left [/} right j/J down k/K up F1 for help"
-		else
-			au VimEnter <buffer> echo "F1 for help"
-		endif
-		au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		"if v:version >= 800
+		"	au VimEnter <buffer> echo "[/{ Move left [/} right j/J down k/K up F1 for help"
+		"else
+		"	au VimEnter <buffer> echo "F1 for help"
+		"endif
+		"au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
 
-		autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReadColumn()
-		autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReShowNullChar() 
+		"autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReadColumn()
+		"autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReShowNullChar() 
 		"autocmd vimLeave *.new call ClearColumnList()
 
 		" Use CursorMoved to automatically adjust the cursor position.
 		autocmd CursorMoved <buffer> call oracle_tui#CursorMovedForUpdate()
 
-		autocmd CursorHold * call oracle_tui#ShowPrompt()
-		setlocal updatetime=500
-		setlocal ttimeoutlen=50
+		autocmd CursorHold <buffer> call oracle_tui#ShowPrompt()
+		"setlocal updatetime=500
+		"setlocal ttimeoutlen=50
+		autocmd BufReadPost <buffer> call feedkeys("gglh", 'n')
 	augroup END
 endfun
 
