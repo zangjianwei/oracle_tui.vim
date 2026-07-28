@@ -8,7 +8,7 @@
 ################################################################################
 if [ $# -ne 2 -a $# -ne 4 ];then
 	echo "Usage:$0 vimpid flag [username] [password]"
-	exit
+	exit 15
 fi
 
 if [ $# -eq 4 ];then
@@ -98,12 +98,12 @@ SQL_END=SQL_END_$cur_pid
 
 browfile=~/.dbtmp/$vimpid.txt
 
-if [ ! -s $sqlfile ];then
-	echo "没有sql语句" > $browfile
-	vim -c "set nonu" $browfile
-	rm -f $browfile
-	exit 3
-fi
+#if [ ! -s $sqlfile ];then
+#	echo "没有sql语句" > $browfile
+#	vim -c "set nonu" $browfile
+#	rm -f $browfile
+#	exit 1
+#fi
 
 #下面清空管道没用，因为有可能数据还没到管道
 #先清空管道
@@ -126,22 +126,22 @@ sql=`awk '{
 	}' $sqlfile`
 
 if [ ! -p $pipe_in ];then
-	echo "未与sqlplus建立连接" > $browfile
-	vim -c "set nonu" $browfile
-	rm -f $browfile
+	#echo "未与sqlplus建立连接" > $browfile
+	#vim -c "set nonu" $browfile
+	#rm -f $browfile
 	rm -f $sqlfile
-	exit 3
+	exit 4
 fi
 
 sqlplus_pid=`cat $sqlplus_pid_file|awk '{print $1}'`
 #pid2=`ps -ef|awk -v pid=$sqlplus_pid '{if ($2 == pid) print $2}'`
 #if [ "$pid2" != "$sqlplus_pid" ];then
 if ! kill -0 $sqlplus_pid 2>/dev/null; then
-	echo "与sqlplus断开" > $browfile
-	vim -c "set nonu" $browfile
-	rm -f $browfile
+	#echo "与sqlplus断开" > $browfile
+	#vim -c "set nonu" $browfile
+	#rm -f $browfile
 	rm -f $sqlfile
-	exit 3
+	exit 4
 fi
 
 kill_waitpid()
@@ -258,14 +258,14 @@ EOF
 	wait $read_pid
 
 	if [ $int_flag -eq 1 ];then
-		echo "请求被中断!" > $browfile
-		vim -c "set nonu"  $browfile
+		#echo "请求被中断!" > $browfile
+		#vim -c "set nonu"  $browfile
 		rm -f $descfile
-		rm -f $browfile
+		#rm -f $browfile
 		#rm -f $setfile
 		rm -f $procfile
 		rm -f $sqlfile
-		exit 3
+		exit 13
 	fi
 
 	file_len=$HOME/.dbtmp/$vimpid.len
@@ -484,8 +484,8 @@ EOF
 		kill -9 $read_pid > /dev/null 2>&1
 	else
 		kill -9 $bg_pid   > /dev/null 2>&1
-		rm -f $clear_col_file
 	fi
+	rm -f $clear_col_file
 
 	rm -f $procfile
 	rm -f $descfile
@@ -567,26 +567,10 @@ if [ ! -s $browfile ];then
 	if [ $int_flag -ne 1 ];then
 		echo "执行完成" > $browfile
 	else
-		echo "执行被中断" > $browfile
-	fi
-	vim -c "set nonu" $browfile
-else
-	#要加-u NONE(不加载默认配置),否则调用ShowUpdateTitle()时光标停在第5行，且不能向上移动
-	if [ $one_select_flag -eq 1 ];then
-		suc_flag=`sed -n '3p' $browfile|awk '{if ($0 ~ /^[- ][- ]*$/) print 1}'`
-		if [ "$suc_flag" = "1" ];then
-			vim -u NONE -c "call oracle_tui#SetUsername('$DBUSER')|call oracle_tui#SetPassword('$DBPASS')|call oracle_tui#SetLocal()|call oracle_tui#ShowViewTitle()|call oracle_tui#SetMapView()|call oracle_tui#SetAutocmdView()|set ve=all|normal! gg" $browfile
-		else
-			vim -u NONE -c "call oracle_tui#SetLocal()" $browfile
-		fi
-	else
-		vim -u NONE -c "call oracle_tui#SetLocal()|set ve=all" $browfile
+		#echo "执行被中断" > $browfile
+		rm -f $browfile
+		exit 13
 	fi
 fi
-
-rm -f $browfile
-#rm -f $setfile
-rm -f $sqlfile
-
 
 exit 0

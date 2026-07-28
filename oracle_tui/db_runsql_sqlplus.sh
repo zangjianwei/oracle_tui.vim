@@ -372,7 +372,7 @@ then
 	if [ $sel_flag -eq 1 ];then
 		suc_flag=`sed -n '3p' $browfile|awk '{if ($0 ~ /^[- ][- ]*$/) print 1}'`
 		if [ "$suc_flag" = "1" ];then
-			vim -u NONE -c "call oracle_tui#SetLocal()|call oracle_tui#SetMapView()|call oracle_tui#ShowViewTitle()|call oracle_tui#SetAutocmdView()|set ve=all" $browfile
+			vim -u NONE -c "call oracle_tui#InitViewWindowVar()|call oracle_tui#SetLocal()|call oracle_tui#SetMapView()|call oracle_tui#ShowViewTitle()|call oracle_tui#SetAutocmdView()|cnoremap <silent> <expr> <CR> oracle_tui#CheckViewCommand()|set ve=all" $browfile
 		else
 			vim -u NONE -c "call oracle_tui#SetLocal()|call oracle_tui#SetMapView()|call oracle_tui#SetAutocmdView()|set ve=all" $browfile
 		fi

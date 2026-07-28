@@ -58,9 +58,9 @@ pipe_in=~/.dbtmp/.pipe_in.$vimpid
 pipe_out=~/.dbtmp/.pipe_out.$vimpid
 sqlplus_pid_file=~/.dbtmp/.sqlplus_pid.$vimpid
 #setfile=~/.dbtmp/set_$vimpid.sql
-col_file=~/.dbtmp/${vimpid}_col.txt
-procfile=$HOME/.dbtmp/${vimpid}_proc.sql
-#spooltmpfile=$HOME/.dbtmp/${vimpid}_tmp.spool
+col_file=~/.dbtmp/upd_${vimpid}.col
+procfile=$HOME/.dbtmp/upd_${vimpid}_proc.sql
+#spoolorifile=$HOME/.dbtmp/${vimpid}_tmp.spool
 
 cur_pid=$$
 #SQL_BEGIN=SQL_BEGIN_$cur_pid
@@ -107,10 +107,11 @@ if [ ! -d ~/.dbtmp ];then
 	mkdir -p ~/.dbtmp
 fi
 
-errfile=~/.dbtmp/p_${tabname}-$vimpid.txt.err
-tmpfile=~/.dbtmp/p_${tabname}-$vimpid.txt.tmp
-oldfile=~/.dbtmp/p_${tabname}-$vimpid.txt.old
-newfile=~/.dbtmp/p_${tabname}-$vimpid.txt.new
+errfile=~/.dbtmp/upd_${vimpid}_${tabname}.err
+orifile=~/.dbtmp/upd_${vimpid}_${tabname}.ori
+oldfile=~/.dbtmp/upd_${vimpid}_${tabname}.old
+newfile=~/.dbtmp/upd_${vimpid}_${tabname}.new
+tmpfile=~/.dbtmp/upd_${vimpid}_${tabname}.tmp
 #filename_tmp=~/.dbtmp/${tabname}-$vimpid.txt..dbtmp
 
 if [ ! -p $pipe_in ];then
@@ -227,12 +228,13 @@ ChgSql()
 	fi
 }
 
-newsql=`ChgSql "$sqlstr" $oldfile`
+newsql=`ChgSql "$sqlstr" $errfile`
 if [ $? -ne 0 ];then
-	vim -c "set nonu" $oldfile
-	rm -f $oldfile
+	vim -c "set nonu" $errfile
+	rm -f $errfile
 	exit 12
 fi
+rm -f $errfile
 
 nExec()
 {
@@ -482,19 +484,19 @@ nExec()
 			ELSIF rec_tab(col_num).col_type = 112 THEN
 				--clob
 				value := rpad(rec_tab(col_num).col_name, 40, ' ');
-				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'0'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
+				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'40'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
 			ELSIF rec_tab(col_num).col_type = 8 THEN
 				--long
 				value := rpad(rec_tab(col_num).col_name, 40, ' ');
-				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'0'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
+				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'40'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
 			ELSIF rec_tab(col_num).col_type = 113 THEN
 				--blob
 				value := rpad(rec_tab(col_num).col_name, 40, ' ');
-				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'0'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
+				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'40'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
 			ELSIF rec_tab(col_num).col_type = 24 THEN
 				--long raw
 				value := rpad(rec_tab(col_num).col_name, 40, ' ');
-				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'0'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
+				DBMS_OUTPUT.PUT_LINE('DATATYPE:'||rec_tab(col_num).col_name||' '||rec_tab(col_num).col_type||' '||'40'||' '||to_char(lengthb(rec_tab(col_num).col_name))||' '||rec_tab(col_num).col_charsetform);
 			ELSIF rec_tab(col_num).col_type = 1 AND rec_tab(col_num).col_charsetform = 2 OR rec_tab(col_num).col_type = 96 AND rec_tab(col_num).col_charsetform = 2 THEN
 				--nchar/nvarchar2
 				char_len := rec_tab(col_num).col_max_len*2;
@@ -720,11 +722,7 @@ nExec()
 					if c_value is null then
 						c_value := chr(1);
 					else
-						if trim(c_value) is null then
-							--都是空格,保留一个空格
-							c_value := ' ';
-							all_space_flag := 1;
-						else
+						if trim(c_value) is not null then
 							--去掉后面空格
 							c_value := rtrim(c_value);
 							IF INSTR(c_value, '') > 0 THEN
@@ -754,20 +752,11 @@ nExec()
 						char_len := rec_tab(col_num).col_max_len;
 					end if;
 
-					IF all_space_flag != 1 THEN
-						--用空字符填充右面字符
-						IF lengthb(rec_tab(col_num).col_name) > char_len THEN
-							value := rpad(value, lengthb(rec_tab(col_num).col_name), chr(1));
-						ELSE
-							value := rpad(value, char_len, chr(1));
-						END IF;
+					--用空字符填充右面字符
+					IF lengthb(rec_tab(col_num).col_name) > char_len THEN
+						value := rpad(value, lengthb(rec_tab(col_num).col_name), chr(1));
 					ELSE
-						--用空格填充右面字符
-						IF lengthb(rec_tab(col_num).col_name) > char_len THEN
-							value := rpad(value, lengthb(rec_tab(col_num).col_name), ' ');
-						ELSE
-							value := rpad(value, char_len, ' ');
-						END IF;
+						value := rpad(value, char_len, chr(1));
 					END IF;
 				ELSIF rec_tab(col_num).col_type = 1 THEN
 					--varchar2/nvarchar2
@@ -1141,7 +1130,7 @@ if  command -v disown > /dev/null 2>&1 ;then
 	disown $bg_pid
 fi
 
-nExec "$newsql" "$tmpfile"
+nExec "$newsql" "$orifile"
 suc_flag=$?
 #rm -f $setfile
 
@@ -1156,7 +1145,7 @@ if [ $int_flag -eq 1 ];then
 	rm -f $oldfile
 	rm -f $procfile
 	rm -f $sqlfile
-	rm -f $tmpfile
+	rm -f $orifile
 	exit 13
 fi
 
@@ -1183,31 +1172,31 @@ if [ $suc_flag -ne 0 ];then
 	#if [ -s $oldfile ];then
 	#	vim -c "set nonu" $oldfile
 	#else
-	#	vim -c "set nonu" $tmpfile
+	#	vim -c "set nonu" $orifile
 	#fi
 	#rm -f $setfile
-	#grep -E "^ORA-|^SP2-" $tmpfile > $errfile
+	#grep -E "^ORA-|^SP2-" $orifile > $errfile
 	#if [ -s $errfile ];then
 	#	vim -c "set nonu" $errfile
 	#else
-	#	vim -c "set nonu" $tmpfile
+	#	vim -c "set nonu" $orifile
 	#fi
 
-	vim -c "set nonu" $tmpfile
+	vim -c "set nonu" $orifile
 	rm -f $errfile
 	rm -f $oldfile
 	rm -f $procfile
 	rm -f $sqlfile
-	rm -f $tmpfile
+	rm -f $orifile
 	exit 14
 fi
 
-line=`sed -n '1p' $tmpfile`
+line=`sed -n '1p' $orifile`
 #echo "$line"|grep -E "^不支持|^字段值:.*不能修改" > /dev/null 2>&1
-#grep -E "^不支持|^字段值:.*不能修改" $tmpfile > $errfile
+#grep -E "^不支持|^字段值:.*不能修改" $orifile > $errfile
 #if [ -s $errfile ];then
 #	vim -c "set nonu" $errfile
-#	rm -f $tmpfile
+#	rm -f $orifile
 #	rm -f $errfile
 #	rm -f $sqlfile
 #	rm -f $oldfile
@@ -1217,27 +1206,15 @@ line=`sed -n '1p' $tmpfile`
 #fi
 
 #如果一行长度超过100000,vim编辑器按l,h移动光标会变得很慢
-grep "^DATATYPE:" $tmpfile|sed 's/^DATATYPE://g' > $col_file
+grep "^DATATYPE:" $orifile|sed 's/^DATATYPE://g' > $col_file
 
-grep -v "^DATATYPE:" $tmpfile |grep -v -E "^LOB_FLAG=1|^OVER_32767_FLAG=1|^MAX_LINE_LEN=" > $oldfile
-cp $oldfile $newfile
+grep -v "^DATATYPE:" $orifile |grep -v -E "^LOB_FLAG=1|^OVER_32767_FLAG=1|^MAX_LINE_LEN=" > $tmpfile
 
 if [ "$line" = "LOB_FLAG=1" ];then
-	data_len=`sed -n '$p' $tmpfile|grep "^MAX_LINE_LEN="|awk -F"=" '{print $2}'`
+	data_len=`sed -n '$p' $orifile|grep "^MAX_LINE_LEN="|awk -F"=" '{print $2}'`
 	if [ "$data_len" = "" ];then
 		data_len=0
 	fi
-fi
-
-if [ "$line" = "LOB_FLAG=1" ];then
-	#如果是有clob字段并且数据装在方式不为ONLY_SQL时，文件名称开头为p_c_
-	result_oldfile=~/.dbtmp/p_c_${tabname}-$vimpid.txt.old
-	result_newfile=~/.dbtmp/p_c_${tabname}-$vimpid.txt.new
-	shortfile="p_c_${tabname}-$vimpid"
-else
-	result_oldfile=$oldfile
-	result_newfile=$newfile
-	shortfile="p_${tabname}-$vimpid"
 fi
 
 if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
@@ -1251,12 +1228,9 @@ if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
 		disown $file_bg_pid
 	fi
 
-	oldfile2=~/.dbtmp/p_c_${tabname}-$vimpid.txt.old
-	newfile2=~/.dbtmp/p_c_${tabname}-$vimpid.txt.new
-
-	>$oldfile.tmp
-	>$col_file.tmp
-	awk -v fgf=$FGF -v col_file=$col_file -v outfile=$oldfile.tmp \
+	>$oldfile
+	#>$col_file.tmp
+	awk -v fgf=$FGF -v col_file=$col_file -v outfile=$oldfile \
 	    -v dir=$dir \
 		-v vimpid=$vimpid \
 	    -v model=$DBCLI_UPDATE_MODEL 'function AlignStr(leng,in_str,type,flag)
@@ -1322,8 +1296,8 @@ if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
 					{
 						if (length($i) > 0)
 						{
-							lob_file_name_withdir = sprintf("%s/lob_%s_%d_%d.txt.old", dir, vimpid, linenum-1, i-1)
-							lob_file_name = sprintf("<lob_%s_%d_%d.txt.old>", vimpid, linenum-1, i-1)
+							lob_file_name_withdir = sprintf("%s/upd_%s_lob_%d_%d.old", dir, vimpid, linenum-1, i-1)
+							lob_file_name = sprintf("<upd_%s_lob_%d_%d.old>", vimpid, linenum-1, i-1)
 							content = gsub(//, "\n", $i)
 							printf("%s", $i) > lob_file_name_withdir
 							#$i = sprintf("%-40s", lob_file_name);
@@ -1344,28 +1318,28 @@ if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
 		}
 	}
 	END{
-    	for (n=1;n<=num;n++)
-    	{
-			if (arr_type[n] != 112 \
-				&& arr_type[n] != 8 \
-				&& arr_type[n] != 113 \
-				&& arr_type[n] != 24)
-			{
-				len[n] = arr_cont_len[n]
-			}
-			else
-			{
-				len[n] = 40
-			}
+    	#for (n=1;n<=num;n++)
+    	#{
+		#	if (arr_type[n] != 112 \
+		#		&& arr_type[n] != 8 \
+		#		&& arr_type[n] != 113 \
+		#		&& arr_type[n] != 24)
+		#	{
+		#		len[n] = arr_cont_len[n]
+		#	}
+		#	else
+		#	{
+		#		len[n] = 40
+		#	}
 
-    	    line_str = sprintf("%s %s %s %s %s",
-				arr_name[n],
-				arr_type[n],
-				len[n],
-				arr_name_len[n],
-				arr_charset[n])
-			print line_str >> col_file".tmp"
-    	}
+    	#    line_str = sprintf("%s %s %s %s %s",
+		#		arr_name[n],
+		#		arr_type[n],
+		#		len[n],
+		#		arr_name_len[n],
+		#		arr_charset[n])
+		#	print line_str >> col_file".tmp"
+    	#}
 
     	for (i=1;i<=linenum;i++)
     	{
@@ -1392,7 +1366,7 @@ if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
     	    }
     	    print full_line_str >> outfile
     	}
-	}' $oldfile
+	}' $tmpfile
 
 	if [ $int_flag -eq 1 ];then
 		#echo "用户中断了请求" > $oldfile
@@ -1400,19 +1374,15 @@ if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
 		echo "  请求被中断" > $oldfile
 		vim -c "set nonu" $oldfile
 		rm -f $procfile
-		rm -f $result_oldfile
-		rm -f $result_newfile
 		rm -f $oldfile
 		rm -f $newfile
 		#rm -f $setfile
-		rm -f $tmpfile
+		rm -f $orifile
 		rm -f $col_file
 		rm -f $sqlfile
-		rm -f $col_file.tmp
-		rm -f $oldfile.tmp
+		rm -f $tmpfile
 		set +o noglob
-		rm -f $dir/lob_${vimpid}_*.txt.old
-		rm -f $dir/lob_${vimpid}_*.txt.new
+		rm -f $dir/upd_${vimpid}_lob_*.*
 		exit 13
 	fi
 
@@ -1420,10 +1390,10 @@ if [ "$line" = "LOB_FLAG=1" -o "$line" = "OVER_32767_FLAG=1" ];then
 		kill -9 $file_bg_pid   > /dev/null 2>&1
 	fi
 
-	cp $oldfile.tmp $result_oldfile
-	cp $oldfile.tmp $result_newfile
+	cp $oldfile $newfile
+	rm -f $tmpfile
 
-	cp $col_file.tmp $col_file
+	#cp $col_file.tmp $col_file
 else
 	#将替换成NBSP
 	awk -v outfile=$oldfile.tmp -v fgf=$FGF 'BEGIN{FS=OFS=fgf} {
@@ -1439,11 +1409,10 @@ else
     	    }
 		}
 		print 
-	}' $oldfile > $oldfile.tmp
+	}' $tmpfile > $oldfile
 	
-	cp $oldfile.tmp $result_oldfile
-	cp $oldfile.tmp $result_newfile
-	rm -f $oldfile.tmp
+	cp $oldfile $newfile
+	rm -f $tmpfile
 fi
 
 #不接受中断信号
@@ -1452,48 +1421,6 @@ trap "" 2 3
 rm -f $procfile
 rm -f $sqlfile
 
-line_num=`wc -l $result_newfile|awk '{print $1}'`
-#vim 要加-u NONE(不加载默认配置),否则调用ShowUpdateTitle()时光标停在第5行，且不能向上移动
-if [ $line_num -eq 1 ];then
-	vim -u NONE -c "call oracle_tui#SetLocal()|call oracle_tui#SetMapUpdate()|call oracle_tui#SetAutocmdUpdate()" $result_newfile
-else
-	vim -u NONE -c "call oracle_tui#SetLocal()|call oracle_tui#SetMapUpdate()|call oracle_tui#SetAutocmdUpdate()|call oracle_tui#ShowUpdateTitle()|normal! gg" $result_newfile
-fi
-#vim -c "call oracle_tui#SetLocal()|call oracle_tui#SetMapUpdate()|call oracle_tui#SetAutocmdUpdate()|call oracle_tui#ShowDiff()" -c "call Hid()|redraw!" $newfile
-# 恢复终端设置
+rm -f $orifile
 
-rm -f $result_oldfile
-rm -f $result_newfile
-rm -f $oldfile
-rm -f $newfile
-#rm -f $setfile
-rm -f $tmpfile
-rm -f $col_file
-rm -f $col_file.tmp
-rm -f $oldfile.tmp
-set +o noglob
-rm -f $dir/lob_${vimpid}_*.txt.old
-rm -f $dir/lob_${vimpid}_*.txt.new
-
-ReturnByErrorCode() 
-{
-    for suffix in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-        if [ -f ~/.dbtmp/$shortfile.err.$suffix ]; then
-            rm -f ~/.dbtmp/$shortfile.err.$suffix
-            exit $suffix
-        fi
-    done
-
-	#提交修改时调用db_update_data.sh,它只有在修改数据失败时
-	#不会返回到db_query_update.sh(停留在数据编辑文件中提示:请
-	#重新编辑), 其他情况都会直接返回到db_query_update.sh脚本中
-
-	#db_update_data.sh修改数据失败后不会产生错误码指示文件,
-	#用户要么选在重修修改数据后提交修改知道修改成功后
-	#返回到本脚本，要么选择直接选择退出不再修改,选择退出时
-	#不会有对应的错误码文件,100就代表修改失败后放弃修改
-	exit 100
-}
-
-#根据错误码文件返回指定的返回值
-ReturnByErrorCode
+exit 0

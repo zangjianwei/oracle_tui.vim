@@ -34,6 +34,8 @@
 "
 "==============================================================================
 let s:save_cpo = &cpo
+let s:save_mouse = &mouse
+let s:save_showtabline = &showtabline
 set cpo&vim
 
 "下面这行是为了加载自己的crtdb.txt用，正式提供时要删除
@@ -50,6 +52,38 @@ endfun
 func! oracle_tui#SetPassword(value)
     let s:password = a:value
 endfun
+
+function! oracle_tui#InitUpdateWindowVar()
+	let t:update_tab_flag = 1
+
+	let t:show_update_vertical_flag = 0
+	let t:show_update_title_flag = 0
+	let t:show_diff_flag = 0
+	let t:show_nullchar_flag = 0
+
+	let t:current_field_num = 0
+	let t:current_pipe_line = 0
+	let t:original_field_content = ''
+
+	let t:lob_substitute_flag = 0
+
+	let t:prompt_flag = 0
+	let t:cur_field = 0
+
+	let t:field_charset = []
+	let t:field_data_len = []
+	let t:field_widths = []
+	let t:field_types = []
+	let t:field_names = []
+endfunction
+
+function! oracle_tui#InitViewWindowVar()
+	let t:show_view_title_flag = 0
+	let t:show_view_vertical_flag = 0
+
+	let t:start_pos = 0
+	let t:end_pos = 0
+endfunction
 
 function! oracle_tui#ExeSql(mode) range
 	if a:mode == 'v'
@@ -245,8 +279,6 @@ function! oracle_tui#ExeSql(mode) range
 
 	call writefile(sql_list, sql_file)
 	redir END
-	let sql_list = []
-	let sql_list2 = []
 
 	if select_flag == 1 && more_line_flag == 0
 		"只有一条查询语句
@@ -268,14 +300,14 @@ function! oracle_tui#ExeSql(mode) range
 		endif
 
 		"let str=substitute(str, "for[ \t][ \t]*update[ \t]*$",  "", "g")
-		let sql="db_query_update.sh ".pid
+		let cmd="db_query_update.sh ".pid
 		"if exists('s:username') && exists('s:password')
 		"	let sql = sql." ".s:username." ".s:password 
 		"endif
 	else
-		let sql="db_exec_sql.sh ".pid. " ".one_select_flag
+		let cmd="db_exec_sql.sh ".pid. " ".one_select_flag
 		if exists('s:username') && exists('s:password')
-			let sql = sql." ".s:username." ".s:password 
+			let cmd = cmd." ".s:username." ".s:password 
 		endif
 	endif
 
@@ -284,62 +316,237 @@ function! oracle_tui#ExeSql(mode) range
 		"execute "!clear;".sql
 		"此处要catch异常，否则shell被中断后后面的语句不再执行(比如redraw!)
 		try
-			sil execute "!clear;".sql
+			sil execute "!".cmd
 		catch 
-			echo "操作被中断"
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+
+				redraw!
+				call oracle_tui#ShowErr('执行异常:'.v:exception)
+				return
+			endif
 		endtry
+
 		let status = shell_error
-    	redraw! "刷新屏幕
-		if status == 0
-			"call ShowMsg("修改数据成功")
-			echo "修改数据成功,按<F2>回滚事务 <F6>提交事务"
-		elseif status == 1
-			call oracle_tui#ShowErr("修改数据失败!")
-			echo ""
-		elseif status == 3
-			call oracle_tui#ShowMsg("数据没有修改!")
-			echo ""
-		elseif status == 4
-			call oracle_tui#ShowErr("数据库连接中断!")
-			echo ""
-		elseif status == 10
-			call oracle_tui#ShowErr("生成更新sql时awk语法错误!")
-			echo ""
-		elseif status == 11
-			call oracle_tui#ShowErr("生成更新sql错误!")
-			echo ""
-		elseif status == 12
-			"call oracle_tui#ShowErr("sql语法错误!")
-			"echo ""
-			let nouse=1
-		elseif status == 13
-			call oracle_tui#ShowErr("操作被中断!")
-			echo ""
-		elseif status == 14
-			"call oracle_tui#ShowErr("生成的pl/sql执行错误!")
-			"echo ""
-			let nouse=1
-		elseif status == 15
-			call oracle_tui#ShowErr("命令行参数错误!")
-			echo ""
-		elseif status == 100
-			call oracle_tui#ShowMsg("放弃修改!")
-		else
-			call oracle_tui#ShowErr("异常,未知的返回码:".status)
-			echo ""
+
+		if status != 0
+			redraw!
+			if status == 4
+				call oracle_tui#ShowErr("数据库连接中断!")
+				echo ""
+			elseif status == 12
+				call oracle_tui#ShowErr("sql语法错误!")
+				echo ""
+			elseif status == 13
+				call oracle_tui#ShowErr("操作被中断!")
+				echo ""
+			elseif status == 14
+				call oracle_tui#ShowErr("生成的pl/sql执行错误!")
+				echo ""
+			elseif status == 15
+				call oracle_tui#ShowErr("命令行参数错误!")
+				echo ""
+			else
+				call oracle_tui#ShowErr("异常,未知的返回码:".status)
+				echo ""
+			endif
+
+			return
 		endif
+
+    	let update_sql =  join(sql_list, ' ')
+
+		let table_name = matchstr(update_sql, '\cfrom\s\+\zs[a-zA-Z0-9._]\+')
+
+		let result_file = $HOME."/.dbtmp/upd_".pid."_".table_name.".new"
+
+		let g:save_laststatus = &laststatus
+		let g:save_statusline = &statusline
+
+		set showtabline=0
+		try
+			execute ":tabnew ".result_file
+		catch 
+			redraw!
+
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+				call oracle_tui#ShowErr('打开结果文件异常:'.v:exception)
+			else
+				call oracle_tui#ShowErr("打开结果文件被中断!")
+			endif
+			return
+		endtry
+
+		let t:current_update_file = result_file
+		call oracle_tui#InitUpdateWindowVar() 
+		set mouse=
+
+		"tabclose 时自动删除缓冲区
+		"set bufhidden=delete
+
+		try
+			call oracle_tui#ReadColumn()
+			call oracle_tui#SaveLobAndSeq()
+			call oracle_tui#SetLocal()
+			call oracle_tui#ShowUpdateTitle()
+			call oracle_tui#SetMapUpdate()
+			call oracle_tui#SetAutocmdUpdate()
+			call oracle_tui#Hid()
+			normal! gg
+		catch 
+			tabclose
+			redraw!
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+				call oracle_tui#ShowErr('执行异常:'.v:exception)
+			else
+				call oracle_tui#ShowErr("初始化文件时被中断!")
+			endif
+			return
+		endtry
+
+		"syn match Comment /<upd_[^>]*_lob_[^>]*\.old>/
+
+		"setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		setlocal statusline=%{&fileencoding}\ show_diff:%{t:show_diff_flag?'on':'off'}\ \ show_nullchar:%{t:show_nullchar_flag?'on':'off'}\ %=%l/%L\ %c-%v\ %p%%
+		setlocal laststatus=2
+
+		setlocal updatetime=500
+		setlocal ttimeoutlen=50
+
+		if v:version >= 800
+			echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
+		else
+			echo "F1帮助"
+		endif
+
+		let w:update_window_flag = 1
 	else
 		"此处要catch异常，否则shell被中断后后面的语句不再执行(比如redraw!)
 		try
-			sil execute "!clear;".sql
+			sil execute "!".cmd
 		catch 
-			echo "操作被中断"
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+
+				redraw!
+				call oracle_tui#ShowErr('执行异常:'.v:exception)
+				return
+			endif
 		endtry
-    	redraw! "刷新屏幕
+
+		let status = shell_error
+
+		if status != 0
+			redraw!
+			if status == 4
+				call oracle_tui#ShowErr("数据库连接中断!")
+				echo ""
+			elseif status == 13
+				call oracle_tui#ShowErr("操作被中断!")
+				echo ""
+			elseif status == 15
+				call oracle_tui#ShowErr("命令行参数错误!")
+				echo ""
+			else
+				call oracle_tui#ShowErr("异常,未知的返回码:".status)
+				echo ""
+			endif
+
+			return
+		endif
+
+		let g:save_laststatus = &laststatus
+		let g:save_statusline = &statusline
+
+		let result_file = $HOME."/.dbtmp/".pid.".txt"
+		set showtabline=0
+    	if !empty(result_file) && filereadable(result_file)
+			try
+				execute ":tabnew ".result_file
+			catch 
+				redraw!
+
+				if v:exception !~# 'Vim:Interrupt'
+					echom "v:exception=".v:exception 
+					echom "v:errmsg=".v:errmsg
+					echom "v:throwpoint=".v:throwpoint
+					call oracle_tui#ShowErr('打开结果文件异常:'.v:exception)
+				else
+					call oracle_tui#ShowErr("打开结果文件被中断!")
+				endif
+				return
+			endtry
+		else
+			call oracle_tui#ShowErr("结果文件[".result_file."]打开异常!")
+			return
+		endif
+
+		"不加下面这行，会和标题行不同步
+		setlocal ve=all
+		normal! gg
+		setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		setlocal laststatus=2
+
+		"tabclose 时自动删除缓冲区,否则会带入上次进入此文件时定义的map
+		"set bufhidden=delete
+
+		set mouse=
+
+		call oracle_tui#InitViewWindowVar() 
+		let t:current_result_file = result_file
+		let t:current_sql_file = sql_file
+
+		call oracle_tui#SetLocal()
+    	let separator_text = getline(3)
+		if separator_text =~ "^[ -][ -]*$" && one_select_flag == 1
+			try
+				call oracle_tui#ShowViewTitle()
+				call oracle_tui#SetMapView()
+				call oracle_tui#SetAutocmdView()
+			catch 
+				tabclose
+				redraw!
+
+				if v:exception !~# 'Vim:Interrupt'
+					echom "v:exception=".v:exception 
+					echom "v:errmsg=".v:errmsg
+					echom "v:throwpoint=".v:throwpoint
+					call oracle_tui#ShowErr('初始化文件时异常:'.v:exception)
+				else
+					call oracle_tui#ShowErr("初始化文件时被中断!")
+				endif
+				return
+			endtry
+
+			let t:result_tab_flag = 1
+
+			redraw!
+    		echo '按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助'
+		else
+			redraw!
+		endif
 	endif
-	"redir END
-	"echo output
 endfun
+
+function! oracle_tui#DeleteCurrentFile()
+    " 获取当前缓冲区文件路径
+    let l:file = expand('%:p')
+
+    " 检查文件是否存在且不是未命名缓冲区
+    if !empty(l:file) && filereadable(l:file)
+        call delete(l:file)
+    endif
+endfunction
 
 function! oracle_tui#SumVisual() range
 	let reg_bak = @a
@@ -544,20 +751,20 @@ function! oracle_tui#Tablist(...)
 	let g:prompt_str = "按Ctrl+k完成补齐"
 
 	if g:grep_table_window_flag != 1
-		let s:save_laststatus = &laststatus
-		let s:save_statusline = &statusline
+		let t:save_laststatus = &laststatus
+		let t:save_statusline = &statusline
 	endif
 	setlocal laststatus=2
 	setlocal statusline=%{g:prompt_str}
 	setlocal nowrap
 
-	"call add(s:head_update_buffers, bufnr('%'))
+	"call add(t:head_update_buffers, bufnr('%'))
 	set buftype=nofile
 	sil execute cmd
 	if shell_error != 0
 		call oracle_tui#ShowErr("没有表名:".a:1."\n")
-		execute "setlocal laststatus=" . s:save_laststatus
-		execute "setlocal statusline=" . escape(s:save_statusline, ' ')
+		execute "setlocal laststatus=" . t:save_laststatus
+		execute "setlocal statusline=" . escape(t:save_statusline, ' ')
 		let g:grep_table_window_flag = 0
 		:q
 		return
@@ -567,13 +774,13 @@ function! oracle_tui#Tablist(...)
 		"sleep 3
 	endif
 	"<F9> 显示crtdb.txt中表定义
-	nnoremap <silent> <buffer> [20~ :ShowTab<CR>
+	nnoremap <silent> <buffer> [20~ :call oracle_tui#ShowTab()<CR>
 	
 	"<F10> 显示创建数据库对象语句
-	nnoremap <silent> <buffer> [21~ :DescObj<CR>
+	nnoremap <silent> <buffer> [21~ :call oracle_tui#DescObj()<CR>
 
 	"Ctrl+k 完成自动对齐
-	nnoremap <silent> <buffer> <C-K> :GetWord<CR>
+	nnoremap <silent> <buffer> <C-K> :call oracle_tui#GetWord()<CR>
 	cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckGrepTableCommand()
 	let g:grep_table_window_flag = 1
 endfun
@@ -584,8 +791,8 @@ function! oracle_tui#CheckGrepTableCommand() abort
 
     if type == ':' && (cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*x')
 		let g:grep_table_window_flag = 0
-		execute "setlocal laststatus=" . s:save_laststatus
-		execute "setlocal statusline=" . escape(s:save_statusline, ' ')
+		execute "setlocal laststatus=" . t:save_laststatus
+		execute "setlocal statusline=" . escape(t:save_statusline, ' ')
     endif
 
     "执行原始命令
@@ -607,8 +814,8 @@ function! oracle_tui#GetWord()
 
 	let word=expand("<cword>")
 	if &buftype == "nofile"
-		execute "setlocal laststatus=" . s:save_laststatus
-		execute "setlocal statusline=" . escape(s:save_statusline, ' ')
+		execute "setlocal laststatus=" . t:save_laststatus
+		execute "setlocal statusline=" . escape(t:save_statusline, ' ')
 		:q
 		let line = getline('.')
 		let col = col('.')
@@ -666,7 +873,7 @@ function! oracle_tui#GetWord()
 	let g:grep_table_window_flag = 0
 endfun
 
-"let s:head_update_buffers = []
+"let t:head_update_buffers = []
 function! oracle_tui#ShowTab() 
 	"let word=expand("<cword>")
 	"execute  "!db_showtab.sh ".word
@@ -703,7 +910,7 @@ function! oracle_tui#ShowTab()
 	"set hid
 	"enew
 	tabnew
-	"call add(s:head_update_buffers, bufnr('%'))
+	"call add(t:head_update_buffers, bufnr('%'))
 
 	"set nowrap
 	setlocal buftype=nofile
@@ -812,7 +1019,7 @@ function! oracle_tui#GrepTab()
 		"echo "word2=".word
 	endif
 	"sleep 2
-	execute ":Tablist ".word
+	execute ":call oracle_tui#Tablist('".word."')"
 endfun
 
 function! oracle_tui#Seelock()
@@ -968,7 +1175,7 @@ function! oracle_tui#ListObj()
 		"set hid
 		vertical vnew
 
-		"call add(s:head_update_buffers, bufnr('%'))
+		"call add(t:head_update_buffers, bufnr('%'))
 
 		"set nowrap
 		set buftype=nofile
@@ -993,11 +1200,14 @@ function! oracle_tui#ListObj()
 		"cmap <silent> <buffer> q bd<bar>execute s:last_win_nr.'wincmd w'
 		"cmap <silent> <buffer> q bd<bar>execute winnr('#').'wincmd w'
 
+		"<F7> 
+		nnoremap <silent> <buffer> [18~ :call oracle_tui#ListObj()<CR>
+
 		"<F9> 显示crtdb.txt中表定义
-		nnoremap <silent> <buffer> [20~ :ShowTab<CR>
+		nnoremap <silent> <buffer> [20~ :call oracle_tui#ShowTab()<CR>
 		
 		"<F10> 显示创建数据库对象语句
-		nnoremap <silent> <buffer> [21~ :DescObj<CR>
+		nnoremap <silent> <buffer> [21~ :call oracle_tui#DescObj()<CR>
 
 		cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckListObjViewCommand()
 
@@ -1118,19 +1328,18 @@ function! oracle_tui#DBCliHelp()
 endfun
 
 "以下是浏览器
-let s:show_view_vertical_flag = 0
 fun! oracle_tui#ViewVerSplit()
-	if s:show_view_vertical_flag == 1
-		let s:show_view_vertical_flag = 0
+	if t:show_view_vertical_flag == 1
+		let t:show_view_vertical_flag = 0
 		:q!
     	"call feedkeys(":call oracle_tui#ShowViewTitle()\<CR>", 'n')
     	call oracle_tui#ShowViewTitle()
 		return
 	else
-		let s:show_view_vertical_flag = 1
+		let t:show_view_vertical_flag = 1
 
-		if s:show_view_title_flag == 1
-			let s:show_view_title_flag = 0
+		if t:show_view_title_flag == 1
+			let t:show_view_title_flag = 0
 			wincmd k
 			q
 			"echo "hello"
@@ -1151,28 +1360,28 @@ fun! oracle_tui#ViewVerSplit()
 	endif
 endfun
 
-let s:show_update_vertical_flag = 0
 fun! oracle_tui#UpdateVerSplit()
-	if s:show_update_vertical_flag == 1
-		let s:show_update_vertical_flag = 0
-		:q!
-		if line('$') > 1
-    		"call feedkeys(":call oracle_tui#ShowUpdateTitle()\<CR>", 'n')
-    		call oracle_tui#ShowUpdateTitle()
-		endif
+	if t:show_update_vertical_flag == 1
+		let t:show_update_vertical_flag = 0
+		q!
+		"if line('$') > 1
+    	"	"call feedkeys(":call oracle_tui#ShowUpdateTitle()\<CR>", 'n')
+    	"	call oracle_tui#ShowUpdateTitle()
+		"endif
+    	call oracle_tui#ShowUpdateTitle()
 		return
 	else
-		let s:show_update_vertical_flag = 1
+		let t:show_update_vertical_flag = 1
 
 		if v:version < 900
 			"vim9.0 版本一下如果在diffthis模式下，会导致两个垂直分割的
 			"窗口会在水平方向同步移动
 			diffoff
-			let s:show_diff_flag = 0
+			let t:show_diff_flag = 0
 		endif
 
-		if s:show_update_title_flag == 1
-			let s:show_update_title_flag = 0
+		if t:show_update_title_flag == 1
+			let t:show_update_title_flag = 0
 			wincmd k
 			q
 			"bwipeout
@@ -1191,6 +1400,8 @@ fun! oracle_tui#UpdateVerSplit()
 		normal! j 
 		call cursor(line,col)
 		normal! 20zl
+
+		let w:update_window_flag = 1
 	endif
 endfun
 
@@ -1221,72 +1432,98 @@ fun! oracle_tui#Crtsql()
 endfun
 
 "初始化为没有转载列定义文件
-let s:load_column_define_flag = 0
-let s:field_charset = []
-let s:field_data_len = []
-let s:field_widths = []
-let s:field_types = []
-let s:field_names = []
+"let s:load_column_define_flag = 0
 "当前文件总行数
-let s:tot_line_num = 0
+"let s:tot_line_num = 0
 fun! oracle_tui#ReadColumn()
 	"如果没有已经加载过一次，则不再装载
 	"因为用tabnew打开一个文件，然后再tabclose时回重新调用ReadColumn
-	if s:load_column_define_flag == 0
-		let s:load_column_define_flag = 1
-	else
-		return
-	endif
+	"if s:load_column_define_flag == 0
+	"	let s:load_column_define_flag = 1
+	"else
+	"	return
+	"endif
 	
 	normal! 20zl
 
 	"获取当前文件总行数
-	let s:tot_line_num = line('$') - 1
-	let s:field_widths = []
-	let s:field_types = []
-	let s:field_names = []
-	let s:field_data_len = []
+	"let s:tot_line_num = line('$') - 1
+	let t:field_widths = []
+	let t:field_types = []
+	let t:field_names = []
+	let t:field_data_len = []
 
-    let file=expand("%")
-    let shortfile = substitute(file, '.txt.new', '', "g")
-    let vimpid = substitute(shortfile, '.*-', '', "g")
+	let vimpid = getpid()
 	let dbdir=$HOME."/.dbtmp/"
-	let col_file = dbdir.vimpid."_col.txt"
+	let col_file = dbdir."upd_".vimpid.".col"
 
 	"第3列是数据长度，第4列是字段名称长度
     let lines = readfile(col_file)
     
+	let b:lob_file_flag = 0
     for line in lines
         let parts = split(line)
-        call add(s:field_names,  parts[0])
-        call add(s:field_types,  parts[1])
-		"s:field_widths 为对齐长度,取数据长度和字段名称长度最大值
+        call add(t:field_names,  parts[0])
+        call add(t:field_types,  parts[1])
+		"t:field_widths 为对齐长度,取数据长度和字段名称长度最大值
 		"此处要转换成数字进行比较，否则比较按字符串进行比较
 		if str2nr(parts[2]) >= str2nr(parts[3])
-        	call add(s:field_widths, str2nr(parts[2]))
+        	call add(t:field_widths, str2nr(parts[2]))
 		else
-        	call add(s:field_widths, str2nr(parts[3]))
+        	call add(t:field_widths, str2nr(parts[3]))
 		endif
-		"s:field_data_len为数据的长度
-        call add(s:field_data_len, str2nr(parts[2]))
-        call add(s:field_charset, str2nr(parts[4]))
+		"t:field_data_len为数据的长度
+        call add(t:field_data_len, str2nr(parts[2]))
+        call add(t:field_charset, str2nr(parts[4]))
+		if parts[1] == 112 
+		   \ || parts[1] == 113  
+		   \ || parts[1] == 8
+		   \ || parts[1] == 24
+			let b:lob_file_flag = 1
+		endif
+    endfor
+endfun
+
+fun! oracle_tui#SaveLobAndSeq()
+	let t:field_lob_content = {} 
+	let t:seqno_arr = {}
+	let t:max_seqno = 0
+    for lnum in range(2, line('$'))
+        let line = getline(lnum)
+
+        let fields = split(line, '', 1)
+    	for i in range(len(fields))
+			if i == 0
+    			let idx_field = substitute(fields[i], ' ', '', 'g')
+				let t:max_seqno += 1
+				let t:seqno_arr[idx_field] = t:max_seqno
+			endif
+
+			if (t:field_types[i] == 112 ||
+				\ t:field_types[i] == 8 ||
+				\ t:field_types[i] == 113 ||
+				\ t:field_types[i] == 24 )
+				let idx = printf("%s,%d", idx_field, i)
+				let t:field_lob_content[idx] = substitute(fields[i], ' ', '', 'g')
+			endif
+    	endfor
     endfor
 endfun
 
 fun! ClearColumnList()
-	let s:field_widths = []
-	let s:field_types = []
-	let s:field_names = []
-	let s:field_data_len = []
-	let s:field_charset = []
+	let t:field_widths = []
+	let t:field_types = []
+	let t:field_names = []
+	let t:field_data_len = []
+	let t:field_charset = []
 	echo "数据已清空"
 endfun
 
 fun! oracle_tui#Update()
 	:w
     let file=expand("%")
-    let shortfile = substitute(file, '.txt.new', '', "g")
-    let cmd = "!clear && db_update_data.sh ".shortfile
+    let shortfile = substitute(file, '.new', '', "g")
+    let cmd = "!db_update_data.sh ".shortfile
 	"if exists('s:username') && exists('s:password')
 	"	let cmd = cmd." ".s:username." ".s:password 
 	"endif
@@ -1295,6 +1532,7 @@ fun! oracle_tui#Update()
 	try
     	"sil execute "!clear && db_update_data.sh ".shortfile
     	sil execute cmd
+		"let output=system(cmd)
 	catch 
 		echo "操作被中断"
 		"sleep 3
@@ -1305,7 +1543,45 @@ fun! oracle_tui#Update()
 	"定界符不配对或更新错误需要重新修改时不退出
 
 	if status != 1
-		:qall!
+		let pid = getpid()
+		call system('rm -f ~/.dbtmp/upd_'.pid.'[_.]*')
+
+		execute "setlocal laststatus=" . g:save_laststatus
+		execute "setlocal statusline=" . escape(g:save_statusline, ' ')
+
+		"删除自动命令
+		autocmd! DBUpdate
+
+		"关闭所有窗口
+		call oracle_tui#TabCloseUpdateAll()
+
+		let &mouse = s:save_mouse
+		let &showtabline = s:save_showtabline
+		redraw!
+
+		if status == 0
+			"call ShowMsg("修改数据成功")
+			echo "修改数据成功,按<F2>回滚事务 <F6>提交事务"
+		elseif status == 3
+			call oracle_tui#ShowMsg("数据没有修改!")
+			echo ""
+		elseif status == 4
+			call oracle_tui#ShowErr("数据库连接中断!")
+			echo ""
+		elseif status == 10
+			call oracle_tui#ShowErr("生成更新sql时awk语法错误!")
+			echo ""
+		elseif status == 11
+			call oracle_tui#ShowErr("生成更新sql错误!")
+			echo ""
+		elseif status == 15
+			call oracle_tui#ShowErr("命令行参数错误!")
+			echo ""
+		else
+			call oracle_tui#ShowErr("异常,未知的返回码:".status)
+			echo ""
+		endif
+
 		return
 	endif
 
@@ -1566,9 +1842,6 @@ function! oracle_tui#PasteColumn()
     "endfor
 endfunction
 
-let s:start_pos = 0
-let s:end_pos = 0
-
 "sil execute "4,".end_line." s/.*/\=strpart(submatch(0),".start_pos.",".len.").\" \".submatch(0)/g"
 "根据某列的内容进行排序
 "vim中sort n 按数字排序时如果有负数，则排序不正确，所用用sort函数进行排序
@@ -1711,8 +1984,8 @@ func! oracle_tui#ColSort(sort_flag, data_type)
 		let end = col('.')
 	endif
 
-	let s:start_pos = start - 1
-	let s:end_pos = end - 1
+	let t:start_pos = start - 1
+	let t:end_pos = end - 1
 
 	set nows
 	let null_line = 1
@@ -1845,7 +2118,7 @@ function! oracle_tui#GetVColRange(str, start_pos, end_pos)
 endfunction
 
 function! oracle_tui#Hid()
-	setlocal syntax=csv
+	"setlocal syntax=csv
 	"必须加下面这行，否则在vim9.2下会有问题
 	syntax clear
 
@@ -1868,6 +2141,14 @@ function! oracle_tui#Hid()
 
 	"\t显示成?
 	syn match Substitute /	/ conceal cchar=?
+
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		"syn match Comment /<upd_[^>]*_lob_[^>]*\.\(old\|new\)>/
+		syn match WarningMsg /<upd_[^>]*_lob_[^>]*\.\(old\|new\)>/
+	endif
+
+	call oracle_tui#ReShowNullChar() 
+
 	" 设置隐藏级别
 	"set conceallevel=0  " 不隐藏（默认）
 	"set conceallevel=1  " 隐藏，但显示一个字符
@@ -1918,13 +2199,12 @@ function! oracle_tui#ProtectFirstLine()
 	"nnoremap <buffer> <expr> D line('.')==1 ? '' : 'D'
 endfunction
 
-let s:head_update_buffers = []
+"let t:head_update_buffers = []
 "与原始文件比较显示不同
-let s:show_diff_flag = 0
 function! oracle_tui#ShowDiff()
 	"nnoremap <silent> <buffer> r R
 	
-	if s:show_diff_flag == 0
+	if t:show_diff_flag == 0
 		let view = winsaveview()
 		let file=expand("%")
 		let oldfile = substitute(file, "new$", "old", "g")
@@ -1932,7 +2212,7 @@ function! oracle_tui#ShowDiff()
 		"echo "oldfile=".oldfile
 		"sleep 3
 		execute "vert diffsplit ".oldfile
-		"call add(s:head_update_buffers, bufnr('%'))
+		"call add(t:head_update_buffers, bufnr('%'))
 		hid
 		set foldcolumn=0
 		setlocal nofoldenable
@@ -1941,16 +2221,22 @@ function! oracle_tui#ShowDiff()
 		"set scrollbind
 		"取消垂直同步，保持水平同步
 		"set nocursorbind
-		let s:show_diff_flag = 1
+		let t:show_diff_flag = 1
 		"不加这行会显示标题行
 		call winrestview(view)
+
+		call oracle_tui#ReShowNullChar() 
+
+		echo "打开显示修改内容开关"
 	else
 		diffoff
-		let s:show_diff_flag = 0
+		let t:show_diff_flag = 0
 
-		if s:show_update_title_flag == 1
+		if t:show_update_title_flag == 1
 			set sbo=hor
 		endif
+
+		echo "关闭显示修改内容开关"
 	endif
 endfunction
 
@@ -1966,10 +2252,10 @@ function! oracle_tui#HorSplitHeader()
 	setlocal nowrap
 	setlocal cul
 
-	"call add(s:head_update_buffers, bufnr('%'))
+	"call add(t:head_update_buffers, bufnr('%'))
 
 	sil execute cmd
-	Hid
+	call oracle_tui#Hid()
 	2d
 	resize 1
 
@@ -1988,15 +2274,15 @@ function! oracle_tui#PreserveView()
 	call winrestview(view)
 endfunction
 
-function! oracle_tui#CloseAllBuffs()
-	for bufnum in s:head_update_buffers
-		if bufexists(bufnum)
-			"echo 'bwipeout! '.bufnum
-			"sleep 2
-			execute 'bwipeout! '.bufnum
-		endif
-	endfor
-endfunction
+"function! oracle_tui#CloseAllBuffs()
+"	for bufnum in t:head_update_buffers
+"		if bufexists(bufnum)
+"			"echo 'bwipeout! '.bufnum
+"			"sleep 2
+"			execute 'bwipeout! '.bufnum
+"		endif
+"	endfor
+"endfunction
 
 "跳到下一个字段
 function! oracle_tui#JumpNextColumn()
@@ -2022,7 +2308,8 @@ endfunction
 
 function! oracle_tui#GetCurrentColumn()
     let line = getline('.')
-    let col = col('.') - 1
+    "let col = col('.') - 1
+    let col = col('.') 
     
     if col < 0
         return 0
@@ -2264,13 +2551,116 @@ endfunction
 function! oracle_tui#NewLine()
 	"normal o
     let first_cont = getline(1)
+    let first_cont = substitute(first_cont, '[^]', ' ', 'g')
+
+	let t:max_seqno += 1
+
+	let idx_field = "NEW_".t:max_seqno
+	let t:seqno_arr[idx_field] = t:max_seqno
+
+	let idx_field = idx_field.repeat(' ', 18 - strwidth(idx_field))
+
+
+    let first_cont = substitute(first_cont, '^[^]*', idx_field, 'g')
+
    	call setline(line('.'), first_cont)
-	:s/[^]/ /g
-	:s/^[^]*/                  /g
+	":s/[^]/ /g
+	":s/^[^]*/                  /g
 	"normal! 0
 	call oracle_tui#CursorMovedForUpdate()
 	startreplace
 endfunction
+
+function! oracle_tui#ChangeRegisterContent(regname)
+    let reg = a:regname
+	let pid = getpid()
+
+    " 如果是整行复制，处理内容
+    if getregtype(reg) ==# 'V'
+        let content = getreg(reg)
+        " 使用 \n 分割成多行，处理每一行
+        let lines = split(content, "\n")
+        let processed = []
+        for line in lines
+			"if line =~ '^$'
+			"	continue
+			"endif
+
+        	let fields = split(line, '', 1)
+
+        	let new_fields = []
+
+			let has_add_flag = 0
+    		for i in range(len(fields))
+				let field = fields[i]
+				if i == 0
+    	    		"let field = repeat(' ', 18)
+					let t:max_seqno += 1
+					let field = "NEW_".t:max_seqno
+					let idx_field = field
+					let t:seqno_arr[idx_field] = t:max_seqno
+
+					let field = field.repeat(' ', 18 - strwidth(field))
+				endif
+
+				if (t:field_types[i] == 112 ||
+					\   t:field_types[i] == 8 || 
+					\   t:field_types[i] == 113 || 
+					\   t:field_types[i] == 24)
+    				let field = substitute(field, ' ', '', 'g')
+					if field != ''
+    					let field = substitute(field, '<', '', 'g')
+    					let field = substitute(field, '>', '', 'g')
+						let old_lob_file = field
+						let old_lob_file_with_dir=$HOME."/.dbtmp/".old_lob_file
+    					if !filereadable(old_lob_file_with_dir)
+							call oracle_tui#ShowErr("文件[".old_lob_file_with_dir."]不存在!")
+							"sleep 2
+							return 1
+						endif
+
+						let new_lob_file = printf("upd_%d_lob_%d_%d.new", pid, t:max_seqno, i)
+						let new_lob_file_with_dir=$HOME."/.dbtmp/".new_lob_file
+
+						let cmd = "cp ".old_lob_file_with_dir." ".new_lob_file_with_dir
+						call system(cmd)
+						let exit_status = shell_error
+						if exit_status != 0
+							let str = "拷贝文件错误!"
+							call oracle_tui#ShowErr(str)
+							"sleep 2
+							return 1
+						endif
+						let field = "<".new_lob_file.">"
+
+						let idx = printf("%s,%d", idx_field, i)
+						let t:field_lob_content[idx] = field
+
+						let field = field.repeat(' ', t:field_widths[i] - strwidth(field))
+    	    			call add(new_fields, field)
+					else
+    	    			call add(new_fields, repeat(' ', t:field_widths[i]))
+					endif
+				else
+    	    		call add(new_fields, field)
+				endif
+			endfor
+			"if has_add_flag == 1
+			"	let field = "NEW_".s:tot_line_num
+			"	let field = field.repeat(' ', 18 - strwidth(field))
+			"	let new_fields[0] = field
+			"endif
+    		let new_line_content = join(new_fields, '')
+
+            call add(processed, new_line_content)
+        endfor
+        let modified = join(processed, "\n")
+
+        call setreg(reg, modified, 'V')
+    endif
+	return 0
+endfunction
+
 
 function! oracle_tui#Visual_paste(type)
 	let regname = v:register
@@ -2280,17 +2670,36 @@ function! oracle_tui#Visual_paste(type)
     let line_count_reg = len(lines)
 	let line_count_sel = line("'>'") - line("'<") + 1
 
-	if visualmode() ==# ''
+	if visualmode() ==# 'v'
+		redraw!
+		call oracle_tui#ShowErr("v模式下不允许粘贴!")
+		return
+	elseif visualmode() ==# ''
 		if line_count_reg != line_count_sel
 			redraw!
 			call oracle_tui#ShowErr("选中的行数与寄存器行数不一致")
 			return
 		endif
+		let end_line_num = line("'<") + line_count_reg - 1 
+	else
+		"整行复制模式下line_count_reg比实际拷贝行数多1
+		let end_line_num = line("'<") + line_count_reg - 1 -1
 	endif
 
-    let s:visual_insert = {
+	let regname = v:register
+	let result = oracle_tui#ChangeRegisterContent(regname)
+	if result != 0
+		return
+	endif
+
+    "let t:visual_insert = {
+    "    \ 'start_line': line("'<"),
+    "    \ 'end_line': line("'>")
+    "    \ }
+
+    let t:visual_insert = {
         \ 'start_line': line("'<"),
-        \ 'end_line': line("'>")
+        \ 'end_line': end_line_num
         \ }
 
 	"执行normal! gv之后v:register 会变
@@ -2326,10 +2735,16 @@ function! oracle_tui#Normal_paste(type)
 	let start_line = line('.')
 	let end_line = start_line + line_count_reg - 1
 
-    let s:visual_insert = {
+    let t:visual_insert = {
         \ 'start_line': start_line,
         \ 'end_line': end_line
         \ }
+
+	let regname = v:register
+	let result = oracle_tui#ChangeRegisterContent(regname)
+	if result != 0
+		return
+	endif
 
 	if a:type == 'p'
 		if v:register == '"'
@@ -2348,7 +2763,7 @@ function! oracle_tui#Normal_paste(type)
 endfunction
 
 function! oracle_tui#VisualSaveState()
-    let s:visual_insert = {
+    let t:visual_insert = {
         \ 'start_line': line("'<"),
         \ 'end_line': line("'>")
         \ }
@@ -2363,7 +2778,7 @@ function! oracle_tui#VisualSaveStateX()
 	endif
 
 	if visualmode() ==# ''
-    	let s:visual_insert = {
+    	let t:visual_insert = {
     	    \ 'start_line': line("'<"),
     	    \ 'end_line': line("'>")
     	    \ }
@@ -2387,7 +2802,7 @@ function! oracle_tui#VisualSaveStateD()
 	endif
 
 	if visualmode() ==# ''
-    	let s:visual_insert = {
+    	let t:visual_insert = {
     	    \ 'start_line': line("'<"),
     	    \ 'end_line': line("'>")
     	    \ }
@@ -2421,7 +2836,7 @@ function! oracle_tui#Process_x()
     endfor
 
 	call oracle_tui#AlignColumnReal()
-	if s:field_types[current_field] == 2 || s:field_types[current_field] == 100 || s:field_types[current_field] == 101
+	if t:field_types[current_field] == 2 || t:field_types[current_field] == 100 || t:field_types[current_field] == 101
 		if getline('.')[col('.')-1] == ''
 			normal! h
 		else
@@ -2430,14 +2845,14 @@ function! oracle_tui#Process_x()
 	endif
 endfunction
 
-let s:title_line = ''
+"let t:title_line = ''
 function! oracle_tui#AlignColumnReal()
-    if exists('s:visual_insert') 
+    if exists('t:visual_insert') 
 		let type = 1
 	else
 		"normal x X dw de D 单行
 		let type = 2
-    	let s:visual_insert = {
+    	let t:visual_insert = {
     	    \ 'start_line': line('.'),
     	    \ 'end_line': line('.')
     	    \ }
@@ -2445,12 +2860,6 @@ function! oracle_tui#AlignColumnReal()
     let current_col = virtcol('.')
 
 	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
 
 	let view = winsaveview()
 
@@ -2458,29 +2867,28 @@ function! oracle_tui#AlignColumnReal()
     
 	let more_flag = 0
     " 处理每一行（从第二行开始）
-	if s:visual_insert.start_line <= 1
+	if t:visual_insert.start_line <= 1
 		normal! u
 		redraw!
 		call oracle_tui#ShowErr("不能修改标题行")
 		"要加下面这行
-    	unlet s:visual_insert
+    	unlet t:visual_insert
 		return 1
 	endif
 
-    for lnum in range(s:visual_insert.start_line, s:visual_insert.end_line)
-		let extend_lob_file_flag = 0
+    for lnum in range(t:visual_insert.start_line, t:visual_insert.end_line)
         let line = getline(lnum)
         let fields = split(line, '', 1)
-		if len(fields) != len(s:field_names)
+		if len(fields) != len(t:field_names)
 			normal! u
 			redraw!
-			if len(fields) < len(s:field_names)
+			if len(fields) < len(t:field_names)
 				call oracle_tui#ShowErr("一次只能修改一列")
 			else
 				call oracle_tui#ShowErr("列数超出字段个数")
 			endif
 			"要加下面这行
-    		unlet s:visual_insert
+    		unlet t:visual_insert
 			return 1
 		endif
 
@@ -2495,92 +2903,76 @@ function! oracle_tui#AlignColumnReal()
     		let field = substitute(fields[i], ' *$', '', 'g')
     		let field = substitute(field, ' ', ' ', 'g')
 
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if i == 0
+				let idx_field = substitute(field, ' ', '', 'g')  
+			endif
+
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
 				"数字类型
     	    	let field = substitute(field, ' ', '', 'g')
-			elseif s:field_types[i] == 96
+			elseif t:field_types[i] == 96
 				"如果是char类型，如果都是空格，不变，否则去掉后面空格
 				if field !~ "^  *$"
     	    		let field = substitute(field, ' *$', '', 'g')
+				else
+					if  strwidth(field) > str2nr(t:field_data_len[i])
+    	    			let field = repeat(' ', t:field_data_len[i])
+					endif
 				endif
-			elseif s:field_types[i] != 1 && s:field_types[i] != 112 
+			elseif t:field_types[i] != 1 && t:field_types[i] != 112 
 				"varchar2/nvarchar2/clob/nclob 不能去后面空格
     	    	let field = substitute(field, ' *$', '', 'g')
 			endif
 
 			"数字右对齐
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
 				"右对齐
-    	    	call add(new_fields, repeat(' ', s:field_widths[i] - strwidth(field)).field)
-			elseif (s:field_types[i] == 112 ||
-				\   s:field_types[i] == 8 || 
-				\   s:field_types[i] == 113 || 
-				\   s:field_types[i] == 24)
+    	    	call add(new_fields, repeat(' ', t:field_widths[i] - strwidth(field)).field)
+			elseif (t:field_types[i] == 112 ||
+				\   t:field_types[i] == 8 || 
+				\   t:field_types[i] == 113 || 
+				\   t:field_types[i] == 24)
+
+				let idx = printf("%s,%d", idx_field, i)
+
 				"lob
-				if (s:field_types[i] == 112 ||
-					\ s:field_types[i] == 8 ||
-					\ s:field_types[i] == 113 ||
-					\ s:field_types[i] == 24 )
-					\ && s:lob_substitute_flag == 1
+				if t:lob_substitute_flag == 1
 					"如果替换后lob字段是文件名，则用替换前备份的字段内容恢复
-					let idx = printf("'%d,%d'", lnum, i)
-    	    		call add(new_fields, s:field_lob_content[idx])
+					let field_lob_content = get(t:field_lob_content, idx, '')
+    	    		call add(new_fields, field_lob_content.repeat(' ', t:field_widths[i] - strwidth(field_lob_content)))
 				else
-					if (s:field_types[i] == 112 ||
-						\ s:field_types[i] == 8 ||
-						\ s:field_types[i] == 113 ||
-						\ s:field_types[i] == 24 )
-						\ && lob_file_flag == 1
-						"let lob_old_filename = printf("<lob_%d_%d_%d.txt.old>", pid,cur_line_num-1,i)
-						"let lob_new_filename = printf("<lob_%d_%d_%d.txt.new>", pid,cur_line_num-1,i)
-						"if field != lob_old_filename && field != lob_new_filename 
-						"	call oracle_tui#ShowErr("lob字段只能通过Ctrl+a来修改")
-						"	return
-						"endif
-    	    			let field = substitute(field, ' ', '', 'g')
-						if field !~# '^<lob_.*.txt.old>$' && field !~# '^<lob_.*.txt.new>$' && field != ''
-							normal! u
-							redraw!
-    						unlet s:visual_insert
-							call oracle_tui#ShowErr("该字段只能通过Ctrl+a来修改")
-							"防止光标不动时出现提示
-							let s:prompt_flag = s:field_types[i]
-							return 1
-						endif
+    	    		let field = substitute(field, ' ', '', 'g')
+
+					let diff_field = substitute(field, '\.new\|\.old', '', 'g')
+
+					let save_diff_field = get(t:field_lob_content, idx, '')
+					let save_diff_field = substitute(save_diff_field, '\.new\|\.old', '', 'g')
+
+					if field != '' && diff_field !=# save_diff_field
+						normal! u
+						redraw!
+    					unlet t:visual_insert
+						call oracle_tui#ShowErr("该字段只能通过Ctrl+a来修改")
+						"防止光标不动时出现提示
+						let t:prompt_flag = t:field_types[i]
+						return 1
 					endif
 
-					if strwidth(field)  > s:field_widths[i] 
-					 	let s:field_widths[i] = strwidth(field)
-    	    			call add(new_fields, field)
-						"let add_len[i] = strwidth(field) - s:field_widths[i]
-						let extend_lob_file_flag = 1
-					else
-						if lob_file_flag == 1 
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						else
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						endif
-						"let add_len[i] = 0
-					endif
+    	    		call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 				endif
-			elseif s:field_types[i] == 1 || s:field_types[i] == 96
+			elseif t:field_types[i] == 1 || t:field_types[i] == 96
 				"char/nchar/varchar2/nvarchar2 填充不间断空格 其他填充空格
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			else
 				"左对齐
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			endif
 
-			if s:field_types[i] == 96 && field =~ "^  *$" 
-				if  strwidth(field) > str2nr(s:field_widths[i])
-					"如果都是空格的char类型，判断是否大于显示宽度
-					let more_flag = 1
-				endif
-			elseif strwidth(field) > str2nr(s:field_data_len[i]) 
-				\ && s:field_types[i] != 112 
-				\ && s:field_types[i] != 8
-				\ && s:field_types[i] != 113 
-				\ && s:field_types[i] != 24
+			if strwidth(field) > str2nr(t:field_data_len[i]) 
+				\ && t:field_types[i] != 112 
+				\ && t:field_types[i] != 8
+				\ && t:field_types[i] != 113 
+				\ && t:field_types[i] != 24
 				let more_flag = 1
 			endif
     	endfor
@@ -2589,41 +2981,6 @@ function! oracle_tui#AlignColumnReal()
     	call setline(lnum, join(new_fields, ''))
     endfor
 
-	"如果有一列lob字段超过原来长度，则扩展整个文件该列的长度
-	if extend_lob_file_flag == 1
-    	for lnum in range(1, line('$'))
-			"下面应该不要
-			"if lnum >= s:visual_insert.start_line && lnum <= s:visual_insert.end_line
-			"	continue
-			"endif
-
-    	    let line = getline(lnum)
-    	    let fields = split(line, '', 1)
-    	    let new_fields = []
-    	    
-    	    " 对齐每个字段
-    		for i in range(len(fields))
-    			let field = fields[i]
-				if (s:field_types[i] == 112 ||
-					\ s:field_types[i] == 8 ||
-					\ s:field_types[i] == 113 ||
-					\ s:field_types[i] == 24)
-					"lob
-    		    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-				else
-					"左对齐
-    		    	call add(new_fields, field)
-				endif
-    		endfor
-    	    
-			if (lnum == 1)
-				let s:title_line = join(new_fields, '')
-			endif
-    	    " 重新组合行
-    	    call setline(lnum, join(new_fields, ''))
-    	endfor
-	endif
-    
     "call setpos('.', save_cursor)
 
 	diffupdate
@@ -2633,22 +2990,10 @@ function! oracle_tui#AlignColumnReal()
 
 	redraw!
     
-    unlet s:visual_insert
-	if s:lob_substitute_flag == 1
-		let s:lob_substitute_flag = 0
-		let s:field_lob_content = {}
-	endif
-
-	if extend_lob_file_flag == 1
-		if s:show_update_title_flag == 1
-			wincmd k
-    		call setline(1, s:title_line)
-			Hid
-
-			wincmd j
-			normal! zl
-			normal! zh
-		endif
+    unlet t:visual_insert
+	if t:lob_substitute_flag == 1
+		let t:lob_substitute_flag = 0
+		"let t:field_lob_content = {}
 	endif
 
 	if more_flag == 1
@@ -2671,12 +3016,12 @@ function! oracle_tui#AlignColumn()
         
         "对于lob类型字段，取他们的最大长度
     	for i in range(len(fields))
-			if (s:field_types[i] == 112 ||
-			    \ s:field_types[i] == 8 ||
-			    \ s:field_types[i] == 113 ||
-			    \ s:field_types[i] == 24) 
-				if len(fields[i] )  > str2nr(s:field_widths[i])
-					let s:field_widths[i] = len(fields[i] )
+			if (t:field_types[i] == 112 ||
+			    \ t:field_types[i] == 8 ||
+			    \ t:field_types[i] == 113 ||
+			    \ t:field_types[i] == 24) 
+				if len(fields[i] )  > str2nr(t:field_widths[i])
+					let t:field_widths[i] = len(fields[i] )
 				endif
 			endif
     	endfor
@@ -2694,13 +3039,17 @@ function! oracle_tui#AlignColumn()
     		let field = substitute(fields[i], ' *$', '', 'g')
     		let field = substitute(field, ' ', ' ', 'g')
 
+			if i == 0
+				let idx_field = substitute(field, ' ', '', 'g')  
+			endif
+
 			"数字类型
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
     	    	let field = substitute(field, ' ', '', 'g')
 			endif
 
 			"如果是char类型，如果都是空格，不变，否则去掉后面空格
-			if s:field_types[i] == 96
+			if t:field_types[i] == 96
 				if field =~ "^  *$"
 					let field = " "
 				else
@@ -2709,74 +3058,51 @@ function! oracle_tui#AlignColumn()
 			endif
 
 			"数字右对齐
-			if s:field_types[i] == 2 || s:field_types[i] == 100 || s:field_types[i] == 101
+			if t:field_types[i] == 2 || t:field_types[i] == 100 || t:field_types[i] == 101
 				"右对齐
-    	    	call add(new_fields, repeat(' ', s:field_widths[i] - strwidth(field)).field)
-			elseif (s:field_types[i] == 112 ||
-				\   s:field_types[i] == 8 || 
-				\   s:field_types[i] == 113 || 
-				\   s:field_types[i] == 24 )
-				"lob
-				if (s:field_types[i] == 112 ||
-					\ s:field_types[i] == 8 ||
-					\ s:field_types[i] == 113 ||
-					\ s:field_types[i] == 24 )
-					\ && s:lob_substitute_flag == 1
+    	    	call add(new_fields, repeat(' ', t:field_widths[i] - strwidth(field)).field)
+			elseif (t:field_types[i] == 112 ||
+				\   t:field_types[i] == 8 || 
+				\   t:field_types[i] == 113 || 
+				\   t:field_types[i] == 24 )
+				
+				let idx = printf("%s,%d", idx_field, i)
+				if t:lob_substitute_flag == 1
 					"如果替换后lob字段是文件名，则用替换前备份的字段内容恢复
-					let idx = printf("'%d,%d'", lnum, i)
-    	    		call add(new_fields, s:field_lob_content[idx])
+    	    		call add(new_fields, t:field_lob_content[idx])
 				else
-					if (s:field_types[i] == 112 ||
-						\ s:field_types[i] == 8 ||
-						\ s:field_types[i] == 113 ||
-						\ s:field_types[i] == 24 )
-						\ && lob_file_flag == 1
-						"let lob_old_filename = printf("<lob_%d_%d_%d.txt.old>", pid,cur_line_num-1,i)
-						"let lob_new_filename = printf("<lob_%d_%d_%d.txt.new>", pid,cur_line_num-1,i)
-						"if field != lob_old_filename && field != lob_new_filename 
-						"	call oracle_tui#ShowErr("lob字段只能通过Ctrl+a来修改")
-						"	return
-						"endif
-    	    			let field = substitute(field, ' ', '', 'g')
-						if field !~# '^<lob_.*.txt.old>$' && field !~# '^<lob_.*.txt.new>$' && field != ''
-							normal! u
-							redraw!
-    						unlet s:visual_insert
-							call oracle_tui#ShowErr("该字段只能通过Ctrl+a来修改")
-							"防止光标不动时出现提示
-							let s:prompt_flag = s:field_types[i]
-							return 1
-						endif
+    	    		let field = substitute(field, ' ', '', 'g')
+
+					let diff_field = substitute(field, '\.new\|\.old', '', 'g')
+					let save_diff_field = substitute(t:field_lob_content[idx], '\.new\|\.old', '', 'g')
+
+					if field != '' && diff_field !=# save_diff_field
+						normal! u
+						redraw!
+    					unlet t:visual_insert
+						call oracle_tui#ShowErr("该字段只能通过Ctrl+a来修改")
+						"防止光标不动时出现提示
+						let t:prompt_flag = t:field_types[i]
+						return 1
 					endif
 
-					if strwidth(field)  > s:field_widths[i] 
-					 	let s:field_widths[i] = strwidth(field)
-    	    			call add(new_fields, field)
-						"let add_len[i] = strwidth(field) - s:field_widths[i]
-						let extend_lob_file_flag = 1
-					else
-						if lob_file_flag == 1 
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						else
-    	    				call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
-						endif
-						"let add_len[i] = 0
+    	    		call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 					endif
 				endif
-			elseif s:field_types[i] == 1
+			elseif t:field_types[i] == 1
 				"varchar2/nvarchar2 填充不间断空格 其他填充空格
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			else
 				"左对齐
-    	    	call add(new_fields, field.repeat(' ', s:field_widths[i] - strwidth(field)))
+    	    	call add(new_fields, field.repeat(' ', t:field_widths[i] - strwidth(field)))
 			endif
 
 			"判断大于数据的最大长度,而不是判断显示的长度
-			if strwidth(field) > str2nr(s:field_data_len[i]) 
-				\ && s:field_types[i] != 112 
-				\ && s:field_types[i] != 8
-				\ && s:field_types[i] != 113 
-				\ && s:field_types[i] != 24
+			if strwidth(field) > str2nr(t:field_data_len[i]) 
+				\ && t:field_types[i] != 112 
+				\ && t:field_types[i] != 8
+				\ && t:field_types[i] != 113 
+				\ && t:field_types[i] != 24
 				let more_flag = 1
 			endif
     	endfor
@@ -2794,9 +3120,12 @@ function! oracle_tui#AlignColumn()
 	endif
 endfunction
 
-let s:show_update_title_flag = 0
 function! oracle_tui#ShowUpdateTitle()
-	if s:show_update_title_flag == 0
+	if t:show_update_title_flag == 0
+		if line('$') <= 1
+			return
+		endif
+
 		if winwidth(0) < &columns
 			call oracle_tui#ShowErr("有垂直分割窗口,不能显示标题行")
 			return
@@ -2806,8 +3135,8 @@ function! oracle_tui#ShowUpdateTitle()
 		let cur_line = line('.')
 		let cur_col = col('.')
 
-		:w
-		let s:show_update_title_flag = 1
+		":w
+		let t:show_update_title_flag = 1
 		let file=expand("%")
 		let cmd = "0read !head -1 ".file
 		new split
@@ -2820,10 +3149,10 @@ function! oracle_tui#ShowUpdateTitle()
 		setlocal nocul
 		setlocal nonu
 
-		"call add(s:head_update_buffers, bufnr('%'))
+		"call add(t:head_update_buffers, bufnr('%'))
 
 		sil execute cmd
-		Hid
+		call oracle_tui#Hid() 
 		2d
 		resize 1
 
@@ -2842,6 +3171,10 @@ function! oracle_tui#ShowUpdateTitle()
 			"将第二行置为窗口第一行
 			execute "normal! 2zt"
 		endif
+		if cur_line == 1
+			let cur_line = 2
+		endif
+		normal! gg
 		call cursor(cur_line,cur_col)
 		"要加下面这行，否则水平位置不同步
 		normal! zl
@@ -2851,9 +3184,14 @@ function! oracle_tui#ShowUpdateTitle()
 		call oracle_tui#UpdateMapHideTitleLines()
 
 		autocmd CursorMoved <buffer> call oracle_tui#UpdateHideTitleLines()
+
+		"不加下面这行，有时候会显示标题行
+		call feedkeys("lh", 'n')
+
+		"call oracle_tui#ReShowNullChar() 
 	else
 		let save_cursor = getpos('.')
-		let s:show_update_title_flag = 0
+		let t:show_update_title_flag = 0
 		wincmd k
 		q
 		"bwipeout
@@ -2871,12 +3209,13 @@ function! oracle_tui#ShowUpdateTitle()
 
 		autocmd! CursorMoved <buffer>
 		call oracle_tui#UnMapHideTitleLines()
+
+		call oracle_tui#ReShowNullChar() 
 	endif
 endfunction
 
-let s:show_view_title_flag = 0
 function! oracle_tui#ShowViewTitle()
-	if s:show_view_title_flag == 0
+	if !exists('t:show_view_title_flag') || t:show_view_title_flag == 0
 		if winwidth(0) < &columns
 			call oracle_tui#ShowErr("有垂直分割窗口,不能显示标题行")
 			return
@@ -2886,8 +3225,9 @@ function! oracle_tui#ShowViewTitle()
 		let cur_col = col('.')
 		let top_line = line("w0")
 
-		let s:show_view_title_flag = 1
-		set sbo=hor
+		let t:show_view_title_flag = 1
+		setlocal scb
+		setlocal sbo=hor
 		sp 
 		resize 3 
 		setlocal nocul
@@ -2897,6 +3237,7 @@ function! oracle_tui#ShowViewTitle()
 		"let &l:stl="%#Normal#".repeat('=',winwidth(0))
 		"highlight MyStatusLine ctermbg=Yellow ctermfg=Black
 		let &l:stl="%#Comment#".repeat('=',winwidth(0))
+		setlocal ve=all
 
 		wincmd j
 		if top_line <= 4
@@ -2914,7 +3255,7 @@ function! oracle_tui#ShowViewTitle()
 		autocmd CursorMoved <buffer> call oracle_tui#ViewHideTitleLines()
 	else
 		let save_cursor = getpos('.')
-		let s:show_view_title_flag = 0
+		let t:show_view_title_flag = 0
 		wincmd k
 		q
 
@@ -2933,6 +3274,10 @@ function! oracle_tui#ShowViewTitle()
 endfunction
 
 function! oracle_tui#ViewHideTitleLines()
+	if winnr('$') == 1
+		return
+	endif
+
     let top_line = line('w0')
 
     if top_line == 1
@@ -2948,6 +3293,10 @@ function! oracle_tui#ViewHideTitleLines()
 endfunction
 
 function! oracle_tui#UpdateHideTitleLines()
+	if winnr('$') == 1
+		return
+	endif
+
     let top_line = line('w0')
 
     if top_line == 1
@@ -2979,15 +3328,18 @@ function! oracle_tui#UnMapHideTitleLines()
 	nunmap <buffer>  <C-y>
 endfunction
 
-let s:show_nullchar_flag = 0
 function! oracle_tui#ShowNullChar()
-	if s:show_nullchar_flag == 0
+	if t:show_nullchar_flag == 0
 		syn match Substitute / / conceal cchar=-
-		let s:show_nullchar_flag = 1
+		let t:show_nullchar_flag = 1
+
+		echo "打开显示空字符开关"
 	else
 		syn match Substitute / / conceal cchar= 
-		let s:show_nullchar_flag = 0
-		Hid
+		let t:show_nullchar_flag = 0
+		call oracle_tui#Hid()
+
+		echo "关闭显示空字符开关"
 	endif
 endfunction
 
@@ -2995,27 +3347,14 @@ endfunction
 "用下面语句保证新窗口退出后能正常显示空字符
 "autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReShowNullChar() 
 function! oracle_tui#ReShowNullChar()
-	if s:show_nullchar_flag == 1
+	if exists('t:show_nullchar_flag') && t:show_nullchar_flag == 1
 		syn match Substitute / / conceal cchar=-
 	endif
 endfunction
 
-let s:current_pipe_field = 0
-let s:current_pipe_line = 0
-let s:original_field_content = ''
 function! oracle_tui#PipeFieldEdit()
     " 获取当前行内容和光标位置
-	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
-
-	let pid = substitute(file, ".*-", "", "g")
-	let pid = substitute(pid, ".txt.new", "", "g")
-	let lob_file=$HOME."/.dbtmp/lob_res_".pid.".txt"
+	let pid = getpid()
     let current_line = getline('.')
     let cursor_col = col('.') - 1
 	let linenum = line('.')
@@ -3035,34 +3374,38 @@ function! oracle_tui#PipeFieldEdit()
     endfor
     
     " 保存当前字段索引和行号
-    let s:current_pipe_field = current_field
-    let s:current_pipe_line = line('.')
-    let s:original_field_content = fields[current_field]
-	let s:original_field_content = substitute(s:original_field_content, " *$", "", "g")
-	"let s:original_field_content = substitute(s:original_field_content, "^ *", "", "g")
-	if s:field_types[current_field] == 96 
+	let current_idx_field = substitute(fields[0], ' ', '', 'g')
+    let current_field_num = current_field
+    let original_field_content = fields[current_field]
+	let original_field_content = substitute(original_field_content, " *$", "", "g")
+
+    let t:current_field_num = current_field
+    let t:current_pipe_line = line('.')
+
+	"let original_field_content = substitute(original_field_content, "^ *", "", "g")
+	if t:field_types[current_field] == 96 
 		"char/nchar
-	elseif s:field_types[current_field] != 1
+	elseif t:field_types[current_field] != 1
 		"不是varchar2/nvarchar2,去掉前后空格
-		let s:original_field_content = substitute(s:original_field_content, "^ *", "", "g")
-		let s:original_field_content = substitute(s:original_field_content, " *$", "", "g")
+		let original_field_content = substitute(original_field_content, "^ *", "", "g")
+		let original_field_content = substitute(original_field_content, " *$", "", "g")
 	endif
+
+	let current_field_type = t:field_types[current_field]
 
     
     " 在新标签页中创建临时缓冲区（不保存到文件）
-	if (s:field_types[current_field] == 112 || 
-		\ s:field_types[current_field] == 8 ||
-		\ s:field_types[current_field] == 113 ||
-		\ s:field_types[current_field] == 24 ) 
-		\ && lob_file_flag == 1
+	if (t:field_types[current_field] == 112 || 
+		\ t:field_types[current_field] == 8 ||
+		\ t:field_types[current_field] == 113 ||
+		\ t:field_types[current_field] == 24 ) 
 		"去掉空格
-		let s:original_field_content = substitute(s:original_field_content, " ", "", "g")
-		if s:original_field_content == ""
-			let s:tot_line_num = s:tot_line_num + 1
-			let lob_file = printf("lob_%d_%d.txt.new", pid,s:tot_line_num)
+		let original_field_content = substitute(original_field_content, " ", "", "g")
+		if original_field_content == ""
+			let lob_file = printf("upd_%d_lob_%s_%d.new", pid,t:seqno_arr[current_idx_field], current_field)
 			let lob_file=$HOME."/.dbtmp/".lob_file
 		else
-			let lob_file=substitute(s:original_field_content, "<", "", "g")
+			let lob_file=substitute(original_field_content, "<", "", "g")
 			let lob_file=substitute(lob_file, ">.*", "", "g")
 			let lob_file=$HOME."/.dbtmp/".lob_file
 		endif
@@ -3070,10 +3413,9 @@ function! oracle_tui#PipeFieldEdit()
 		"autocmd BufWriteCmd <buffer> redraw!|echo "请按Ctrl+a进行保存"
 		"cnoremap <buffer> <expr> w oracle_tui#HandleWrite()
 		"cnoremap <buffer> <expr> x oracle_tui#HandleWrite_x()
-		cnoremap <buffer> <expr> <CR> oracle_tui#CheckSaveCommand()
 		inoremap <buffer> <C-A> <Nop>
 		"autocmd BufWriteCmd <buffer> redraw!|
-    	"		\ if expand('%') =~# '.txt.old$' |
+    	"		\ if expand('%') =~# '.old.upd$' |
     	"		\   echo "请按Ctrl+a进行保存" |
     	"		\ else |
     	"		\   write |
@@ -3086,27 +3428,31 @@ function! oracle_tui#PipeFieldEdit()
 		inoremap <buffer> <C-A> <Nop>
 	endif
 
+	let b:original_field_content = original_field_content
+	let b:current_idx_field      = current_idx_field     
+	let b:current_field_num      = current_field_num     
+
 	setlocal nonu
 	"setlocal timeout
 	"setlocal ve=
+	cnoremap <buffer> <expr> <CR> oracle_tui#CheckSaveCommand()
     
 	let g:prompt_str = "按Ctrl+a 保存所作修改 :q 放弃修改"
 	setlocal laststatus=2
 	"必须要用g:str 全局变量
 	setlocal statusline=%{g:prompt_str}\ %=%l,%c-%v\ %{&fileencoding} 
-	if (s:field_types[current_field] == 112 ||
-	  	\ s:field_types[current_field] == 8 ||
-	  	\ s:field_types[current_field] == 113 ||
-	  	\ s:field_types[current_field] == 24 )
-		\ && lob_file_flag == 1
+	if (current_field_type == 112 ||
+	  	\ current_field_type == 8 ||
+	  	\ current_field_type == 113 ||
+	  	\ current_field_type == 24 )
     	" 映射 Ctrl+a 来保存并关闭
-    	nnoremap <buffer> <silent> <C-A> :SavePipeLobField<CR>
+    	nnoremap <buffer> <silent> <C-A> :call oracle_tui#SavePipeLobField()<CR>
 	else
     	" 填入原始字段内容
-    	call setline(1, split(s:original_field_content, ''))
+    	call setline(1, split(original_field_content, ''))
     	
     	" 映射 Ctrl+a 来保存并关闭
-    	nnoremap <buffer> <silent> <C-A> :SavePipeField<CR>
+    	nnoremap <buffer> <silent> <C-A> :call oracle_tui#SavePipeField()<CR>
 		"echo "按Ctrl+N 保存所作修改 :q 放弃修改"
 		"let s:prompt_str = "按Ctrl+a 保存所作修改 :q 放弃修改"
 		"setlocal ve=
@@ -3162,22 +3508,22 @@ function! oracle_tui#SavePipeField()
     
     " 更新原文件
 	let current_col = virtcol('.')
-    if exists('s:current_pipe_line') && exists('s:current_pipe_field')
-        let current_line = getline(s:current_pipe_line)
+    if exists('t:current_pipe_line') && exists('t:current_field_num')
+        let current_line = getline(t:current_pipe_line)
         let fields = split(current_line, '', 1)
-        let fields[s:current_pipe_field] = new_content
-        call setline(s:current_pipe_line, join(fields, ''))
+        let fields[t:current_field_num] = new_content
+        call setline(t:current_pipe_line, join(fields, ''))
 		call oracle_tui#AlignColumnReal() 
     endif
 	exe "normal! ".current_col."|"   
 	                                 
 	"保持和标题行同步
-	normal! ma
-	normal! gg
-	normal! `a
+	"normal! ma
+	"normal! gg
+	"normal! `a
     
     " 清理变量
-    unlet! s:current_pipe_field s:current_pipe_line s:original_field_content
+    unlet! t:current_field_num t:current_pipe_line t:original_field_content
 endfunction
 
 function! oracle_tui#SavePipeLobField()
@@ -3190,36 +3536,46 @@ function! oracle_tui#SavePipeLobField()
 			let new_file=substitute(file, "old$", "new", "g")
 			execute "w! "new_file
 			execute "e!"
-    		let new_content = substitute(s:original_field_content, "old>", "new>", "g") 
+    		let new_content = substitute(b:original_field_content, "old>", "new>", "g") 
 			"let new_content = printf("%-30s", new_content)
 		else
-			if s:original_field_content == ''
+			if b:original_field_content == ''
 				let file=substitute(file, ".*/", "", "g")
     			let new_content = printf("<%s>", file)
 			endif
 
 			execute "w!"
 		endif
+
+		let idx = printf("%s,%d", b:current_idx_field, b:current_field_num)
+		"let s:tot_line_num += 1
 	endif
 
     " 关闭当前标签页
     tabclose
 
+	let t:field_lob_content[idx] = new_content 
+
 	setlocal laststatus=1
     
     " 更新原文件
-    if exists('s:current_pipe_line') && exists('s:current_pipe_field')
+    if exists('t:current_pipe_line') && exists('t:current_field_num')
 		if new_content != ""
-        	let current_line = getline(s:current_pipe_line)
+        	let current_line = getline(t:current_pipe_line)
         	let fields = split(current_line, '', 1)
-        	let fields[s:current_pipe_field] = new_content
-        	call setline(s:current_pipe_line, join(fields, ''))
+        	let fields[t:current_field_num] = new_content
+        	call setline(t:current_pipe_line, join(fields, ''))
 			call oracle_tui#AlignColumnReal() 
 		endif
     endif
-    
+
+	"保持和标题行同步
+	"normal! ma
+	"normal! gg
+	"normal! `a
+
     " 清理变量
-    unlet! s:current_pipe_field s:current_pipe_line s:original_field_content
+    unlet! t:current_field_num t:current_pipe_line t:original_field_content
 endfunction
 
 " 光标定位函数
@@ -3301,7 +3657,7 @@ function! oracle_tui#CheckUpdateCommand() abort
     let type = getcmdtype()
 
     if type == ':' 
-		if s:current_update_file == expand("%")
+		if t:current_update_file == expand('%:p') 
     		if cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIecn#pl]*[ \t]*$' "s/aaa/bbb/g
     			if cmd =~# 's[ \t]*//[^/]*/[giIecn#pl]*[ \t]*$'
         			let modified_cmd = 'ShowErr 无被替换字符'
@@ -3311,7 +3667,7 @@ function! oracle_tui#CheckUpdateCommand() abort
         			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*\)/\([giIecn#pl]*$\)', 'MySubstitute/\\%>19c\1/\2/\3', '')
         			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
 					"回车替换成NBSP字符,否则传不过去
-        			let modified_cmd = substitute(modified_cmd, '', ' ', '')
+        			"let modified_cmd = substitute(modified_cmd, '', ' ', '')
 				endif
         		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
 				"call feedkeys("\<C-U>ShowErr 无效命令\<CR>", 'n')
@@ -3346,10 +3702,11 @@ function! oracle_tui#CheckUpdateCommand() abort
 		endif
 
 		if winnr('$') > 1 
-			if s:show_update_title_flag == 1 
+			if t:show_update_title_flag == 1 
 				if cmd =~# '^[ \t]*q[ \t]*$'
-        		    let modified_cmd = 'qall'
-        			return "\<C-U>" . modified_cmd . "\<CR>"
+        		    "let modified_cmd = 'qall'
+        	    	let modified_cmd = 'tabclose'
+        			return "\<C-U>w\<CR>:" . modified_cmd . "\<CR>:call feedkeys(\":echo '修改中断!'\\<CR>\", 'n')\<CR>"
 				elseif cmd =~# '^[ \t]*q![ \t]*$'
         		    let modified_cmd = 'qall!'
         			return "\<C-U>" . modified_cmd . "\<CR>"
@@ -3369,14 +3726,14 @@ function! oracle_tui#CheckUpdateCommand() abort
     				return "\<CR>"
         		endif
 			else
-				if s:show_update_vertical_flag == 1
+				if t:show_update_vertical_flag == 1
 					if cmd =~# '^[ \t]*q[ \t]*$' ||
 						\ cmd =~# '^[ \t]*q![ \t]*$' ||
 						\ cmd =~# '^[ \t]*wq[ \t]*$' ||
 						\ cmd =~# '^[ \t]*wq![ \t]*$' ||
 						\ cmd =~# '^[ \t]*x[ \t]*$' ||
 						\ cmd =~# '^[ \t]*x![ \t]*$'
-						let s:show_update_vertical_flag = 0
+						let t:show_update_vertical_flag = 0
 						if line('$') > 1
     						return "\<CR>:call oracle_tui#ShowUpdateTitle()\<CR>"
 						endif
@@ -3398,9 +3755,13 @@ function! oracle_tui#CheckSaveCommand() abort
     let cmd = getcmdline()
     let type = getcmdtype()
 
-    if type == ':' && (cmd =~# '^[ \t]*w'||cmd =~# '^[ \t]*x')
-        let modified_cmd = ":call oracle_tui#ShowErr('按Ctrl+a 保存所作修改 :q 放弃修改')"
-        return "\<C-U>" . modified_cmd . "\<CR>"
+    if type == ':' 
+		if cmd =~# '^[ \t]*w'||cmd =~# '^[ \t]*x'
+        	let modified_cmd = ":call oracle_tui#ShowErr('按Ctrl+a 保存所作修改 :q 放弃修改')"
+        	return "\<C-U>" . modified_cmd . "\<CR>"
+		else
+    		return "\<CR>"
+		endif
 	else
     	"执行原始命令
     	return "\<CR>"
@@ -3419,45 +3780,225 @@ function! oracle_tui#CheckListObjViewCommand() abort
     return "\<CR>"
 endfunction
 
+function! oracle_tui#TabCloseUpdateAll()
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		let lob_file_flag = 1
+	else
+		let lob_file_flag = 0
+	endif
+
+    " 获取当前标签页所有窗口的缓冲区列表
+    let old_update_file = substitute(t:current_update_file, ".new$", ".old", '')
+
+    let buffers = []
+    for win in tabpagebuflist()
+        call add(buffers, win)
+    endfor
+    
+    " 关闭标签页
+    tabclose!
+    
+    " 删除所有缓冲区
+    for buf in buffers
+        if bufexists(buf) && buflisted(buf)
+            execute 'bdelete! ' . buf
+        endif
+    endfor
+
+    let buf_num = bufnr(old_update_file)
+    if buf_num != -1
+        sil! execute 'bdelete! ' . buf_num
+    endif
+
+	if lob_file_flag == 1
+    	let pattern = '\.dbtmp/upd_' . getpid() . '_lob'
+    	let buf_list = filter(range(1, bufnr('$')), 'bufname(v:val) =~# pattern')
+    	if empty(buf_list)
+    	    "echom "没有LOB缓冲区"
+    	    return
+    	endif
+    	for buf in buf_list
+    	    sil! execute 'bdelete!' buf
+    	endfor
+	endif
+endfunction
+
+function! oracle_tui#TabCloseViewAll()
+    " 获取当前标签页所有窗口的缓冲区列表
+    let buffers = []
+    for win in tabpagebuflist()
+        call add(buffers, win)
+    endfor
+    
+    " 关闭标签页
+    tabclose!
+    
+    " 删除所有缓冲区
+    for buf in buffers
+        if bufexists(buf) && buflisted(buf)
+            execute 'bdelete! ' . buf
+        endif
+    endfor
+endfunction
+
 function! oracle_tui#CheckMainCommand() abort
     let cmd = getcmdline()
     let type = getcmdtype()
 
-    if type == ':' && (cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*wq'||cmd =~# '^[ \t]*x')
-		if exists('w:main_window_flag') && w:main_window_flag == 1
-        	if oracle_tui#CheckIfCommit()
-        	    let modified_cmd = ":call oracle_tui#ShowErr('有未提交事务,不能退出,按<F2>回滚 <F6>提交')"
-				"feedkeys在vim7.2版本下无法正常工作
+    if type == ':' 
+		if exists('w:update_window_flag') && w:update_window_flag == 1 &&
+			\ t:current_update_file == expand('%:p') 
+
+    		if cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIecn#pl]*[ \t]*$' "s/aaa/bbb/g
+    			if cmd =~# 's[ \t]*//[^/]*/[giIecn#pl]*[ \t]*$'
+        			let modified_cmd = "call oracle_tui#ShowErr('无被替换字符')"
+    			elseif cmd =~# 's[ \t]*/[^/]*/[^/]*/[giIen#pl]*c[giIen#pl]*[ \t]*$' "s/aaa/bbb/g
+        			let modified_cmd = "call oracle_tui#ShowErr('不能带参数c')"
+				else
+        			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*\)/\([giIecn#pl]*$\)', 'MySubstitute/\\%>19c\1/\2/\3', '')
+        			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
+					"回车替换成NBSP字符,否则传不过去
+        			"let modified_cmd = substitute(modified_cmd, '', ' ', '')
+				endif
+        		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
+				"call feedkeys("\<C-U>ShowErr 无效命令\<CR>", 'n')
+				"在该函数中不能修改文件内容，直接调用call oracle_tui#AlignColumn()会报错,可以用下面方式调用 
+				"feedkeys函数后面的语句不会被调用，但是下面用timer_start能调用
+				"call timer_start(0, {-> oracle_tui#AlignColumn()})
+        		return "\<C-U>" . modified_cmd . "\<CR>"
+    		elseif cmd =~# 's[ \t]*/[^/]*/[^/]*$' "s/aaa/bbb
+    			if cmd =~# 's[ \t]*//[^/]*$'
+        			let modified_cmd = "call oracle_tui#ShowErr('无被替换字符')"
+				else
+        			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*\)/\([^/]*$\)', 'MySubstitute/\\%>19c\1/\2', '')
+        			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
+				endif
         		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
         		return "\<C-U>" . modified_cmd . "\<CR>"
-        	endif
+			elseif cmd =~# 's[ \t]*/[^/]*[ \t]*$' "s/aaa
+			    if cmd =~# 's[ \t]*/[ \t]*$'
+        			let modified_cmd = "call oracle_tui#ShowErr('无被替换字符')"
+				else
+        			let modified_cmd = substitute(cmd, 's[ \t]*/\([^/]*[ \t]*$\)', 'MySubstitute/\\%>19c\1', '')
+        			let modified_cmd = substitute(modified_cmd, '^[ \t]*g/\([^/][^/]*\)/', 'g/\\%>19c\1/', '')
+				endif
+        		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
+        		return "\<C-U>" . modified_cmd . "\<CR>"
+			endif
+			"比如ls messages buffers等以s结尾的命令不管
+			"elseif cmd =~# 's[ \t]*$' "s
+        	"	"let modified_cmd = substitute(cmd, 's[ \t]*$', 'MySubstitute', '')
+        	"	let modified_cmd = 'ShowErr 没有参数'
+        	"	call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
 		endif
-    endif
 
-    if type == ':' 
-		if (tabpagenr('$') > 1 || winnr('$') > 1) && 
-			\ exists('w:main_window_flag') && w:main_window_flag == 1
-			if cmd =~# '^[ \t]*q[ \t]*$'
-        	    let modified_cmd = 'qall'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*q![ \t]*$'
-        	    let modified_cmd = 'qall!'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*wq[ \t]*$'
-        	    let modified_cmd = 'wqall'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*wq![ \t]*$'
-        	    let modified_cmd = 'wqall!'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*x[ \t]*$'
-        	    let modified_cmd = 'xall'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
-			elseif cmd =~# '^[ \t]*x![ \t]*$'
-        	    let modified_cmd = 'xall!'
-        		return "\<C-U>" . modified_cmd . "\<CR>"
+		if exists('w:main_window_flag') && w:main_window_flag == 1
+    		if cmd =~# '^[ \t]*q'||cmd =~# '^[ \t]*wq'||cmd =~# '^[ \t]*x'
+    	    	if oracle_tui#CheckIfCommit()
+    	    	    let modified_cmd = ":call oracle_tui#ShowErr('有未提交事务,不能退出,按<F2>回滚 <F6>提交')"
+					"feedkeys在vim7.2版本下无法正常工作
+    	    		"call feedkeys(":\<C-U>" . modified_cmd . "\<CR>", 'n')
+    	    		return "\<C-U>" . modified_cmd . "\<CR>"
+    	    	endif
+			endif
+
+			if tabpagenr('$') > 1 || winnr('$') > 1 
+				if cmd =~# '^[ \t]*q[ \t]*$'
+        		    let modified_cmd = 'qall'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*q![ \t]*$'
+        		    let modified_cmd = 'qall!'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*wq[ \t]*$'
+        		    let modified_cmd = 'wqall'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*wq![ \t]*$'
+        		    let modified_cmd = 'wqall!'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*x[ \t]*$'
+        		    let modified_cmd = 'xall'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+				elseif cmd =~# '^[ \t]*x![ \t]*$'
+        		    let modified_cmd = 'xall!'
+        			return "\<C-U>" . modified_cmd . "\<CR>"
+        		endif
+			endif
+		elseif (winnr('$') > 1) && 
+			\ exists('t:result_tab_flag') && t:result_tab_flag == 1
+			if t:show_view_vertical_flag == 1
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+					let t:show_view_vertical_flag = 0
+    				return "\<CR>:call oracle_tui#ShowViewTitle()\<CR>"
+        		endif
 			else
-    			return "\<CR>"
-        	endif
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+
+					if cmd =~# '^[ \t]*q[ \t]*$' && &modified
+        				return "\<C-U>call oracle_tui#ShowErr('No write since last change (add ! to override)')\<CR>"
+					endif
+
+					w
+					execute "setlocal laststatus=" . g:save_laststatus
+					execute "setlocal statusline=" . escape(g:save_statusline, ' ')
+
+					autocmd! DBView
+
+					let &mouse = s:save_mouse
+					let &showtabline = s:save_showtabline
+					call delete(t:current_result_file)
+					call delete(t:current_sql_file)
+
+        			return "\<C-U>call oracle_tui#TabCloseViewAll()\<CR>"
+        		endif
+			endif
+		elseif (winnr('$') > 1) && 
+			\ exists('t:update_tab_flag') && t:update_tab_flag == 1
+			if t:show_update_vertical_flag == 1
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+					let t:show_update_vertical_flag = 0
+    				return "\<CR>:call oracle_tui#ShowUpdateTitle()\<CR>"
+        		endif
+			else
+				if cmd =~# '^[ \t]*q'       ||
+					\ cmd =~# '^[ \t]*wq'   ||
+					\ cmd =~# '^[ \t]*x'    ||
+					\ cmd =~# '^[ \t]*xit'    ||
+					\ cmd =~# '^[ \t]*exit' 
+
+					if cmd =~# '^[ \t]*q[ \t]*$' && &modified
+        				return "\<C-U>call oracle_tui#ShowErr('No write since last change (add ! to override)')\<CR>"
+					endif
+
+					w
+					execute "setlocal laststatus=" . g:save_laststatus
+					execute "setlocal statusline=" . escape(g:save_statusline, ' ')
+
+					"删除自动命令
+					autocmd! DBUpdate
+
+					let pid=getpid()
+
+					let &mouse = s:save_mouse
+					let &showtabline = s:save_showtabline
+					call delete(t:current_update_file)
+					call system('rm -f ~/.dbtmp/upd_'.pid.'[._]*')
+					"echo "退出修改!"
+
+        			return "\<C-U>call oracle_tui#TabCloseUpdateAll()\<CR>:echo '退出修改'\<CR>"
+        		endif
+			endif
 		else
     		return "\<CR>"
 		endif
@@ -3467,12 +4008,12 @@ function! oracle_tui#CheckMainCommand() abort
     return "\<CR>"
 endfunction
 
-function! oracle_tui#ViewCommandLine() abort
+function! oracle_tui#CheckViewCommand() abort
     let cmd = getcmdline()
     let type = getcmdtype()
 
     if type == ':' 
-		if s:show_view_title_flag == 1
+		if t:show_view_title_flag == 1
 			if cmd =~# '^[ \t]*q[ \t]*$'
         	    let modified_cmd = 'qall'
         		return "\<C-U>" . modified_cmd . "\<CR>"
@@ -3494,14 +4035,14 @@ function! oracle_tui#ViewCommandLine() abort
 			else
     			return "\<CR>"
         	endif
-		elseif s:show_view_vertical_flag == 1
+		elseif t:show_view_vertical_flag == 1
 			if cmd =~# '^[ \t]*q[ \t]*$' ||
 				\ cmd =~# '^[ \t]*q![ \t]*$' ||
 				\ cmd =~# '^[ \t]*wq[ \t]*$' ||
 				\ cmd =~# '^[ \t]*wq![ \t]*$' ||
 				\ cmd =~# '^[ \t]*x[ \t]*$' ||
 				\ cmd =~# '^[ \t]*x![ \t]*$'
-				let s:show_view_vertical_flag = 0
+				let t:show_view_vertical_flag = 0
     			return "\<CR>:call oracle_tui#ShowViewTitle()\<CR>"
 			else
     			return "\<CR>"
@@ -3514,7 +4055,7 @@ function! oracle_tui#ViewCommandLine() abort
 endfunction
 
 function! oracle_tui#AfterSubstitute(start_line,end_line)
-    let s:visual_insert = {
+    let t:visual_insert = {
         \ 'start_line': a:start_line,
         \ 'end_line': a:end_line
         \ }
@@ -3544,8 +4085,7 @@ function! oracle_tui#SubstituteWrapperBak(line1, line2, args) abort
 endfunction
 
 "代表字典,可以非数字访问
-let s:field_lob_content = {} 
-"let s:field_lob_content = [] "代表列表，只能用数字索引访问
+"let t:field_lob_content = [] "代表列表，只能用数字索引访问
 
 "替换前先保存lob字段文件名称
 function! oracle_tui#SaveLobContent(start_line, end_line) abort
@@ -3556,19 +4096,21 @@ function! oracle_tui#SaveLobContent(start_line, end_line) abort
 			"先去掉尾部的NBSP字符，再将剩余的NBSP字符替换成空格
     		"let field = substitute(fields[i], ' *$', '', 'g')
     		"let field = substitute(field, ' ', ' ', 'g')
+			if i == 0
+    			let idx_field = substitute(fields[i], ' ', '', 'g')
+			endif
 
-			if (s:field_types[i] == 112 ||
-				\ s:field_types[i] == 8 ||
-				\ s:field_types[i] == 113 ||
-				\ s:field_types[i] == 24 )
-				let idx = printf("'%d,%d'", lnum, i)
-				let s:field_lob_content[idx] = fields[i]
+			if (t:field_types[i] == 112 ||
+				\ t:field_types[i] == 8 ||
+				\ t:field_types[i] == 113 ||
+				\ t:field_types[i] == 24 )
+				let idx = printf("%s,%d", idx_field, i)
+				let t:field_lob_content[idx] = fields[i]
 			endif
     	endfor
     endfor
 endfunction
 
-let s:lob_substitute_flag = 0
 function! oracle_tui#SubstituteWrapper(line1, line2, args) abort
 	"第一行修改要跳过
 	let v:errmsg = ''
@@ -3582,21 +4124,22 @@ function! oracle_tui#SubstituteWrapper(line1, line2, args) abort
 		let start_line = 2
 	endif
 
-	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
-
-	if lob_file_flag == 1
-		let s:lob_substitute_flag = 1
-    	call oracle_tui#SaveLobContent(start_line, end_line)
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		let t:lob_substitute_flag = 1
+    	"call oracle_tui#SaveLobContent(start_line, end_line)
 	endif
 
+	"let t:max_seqno = t:max_seqno + 1
+	"let idx_field = "NEW_".t:max_seqno
+	"let t:seqno_arr[idx_field] = t:max_seqno
+
+	"let idx_field = idx_field.repeat(' ', 18 - strwidth(idx_field))
+	"let idx_field = ''.idx_field.''
 	"替换回车时前面补一列rowid字段(回车被替换成NBSP字符,否则传不过来
-    let sub_str = substitute(a:args, ' ', 'XXXXXXXXXXXXXXXXXX', '')
+    "let sub_str = substitute(a:args, ' ', 'XXXXXXXXXXXXXXXXXX', '')
+    "let sub_str = substitute(a:args, ' ', idx_field, '')
+
+	let sub_str = a:args
     silent! execute start_line . ',' . end_line . 's' . sub_str
 
     " 检查是否有错误
@@ -3638,7 +4181,7 @@ endfunction
 
 function! oracle_tui#MyDeleteMapping()
     " 保存原来的 operatorfunc
-    let s:old_opfunc = &operatorfunc
+    let t:old_opfunc = &operatorfunc
 
     " 设置自定义函数
     set operatorfunc=MyDeleteOperator
@@ -3660,11 +4203,9 @@ function! MyDeleteOperator(type, ...)
 
 
     " 恢复原来的 operatorfunc（如果需要的话）
-    let &operatorfunc = s:old_opfunc
+    let &operatorfunc = t:old_opfunc
 endfunction
 
-let s:prompt_flag = 0
-let s:cur_field = 0
 function! oracle_tui#ShowPrompt()
     let current_line = getline('.')
     let cursor_col = col('.') - 1
@@ -3682,52 +4223,44 @@ function! oracle_tui#ShowPrompt()
         let pos += len(fields[i]) + 1
     endfor
 
-	let file=expand("%")
-	let shortfile=substitute(file, ".*/", "", "g")
-	if shortfile =~# "^p_c_" || shortfile =~# "^c_"
-		let lob_file_flag = 1
-	else
-		let lob_file_flag = 0
-    endif
-
-	if lob_file_flag == 1 && (s:field_types[current_field] == 112 ||
-		\ s:field_types[current_field] == 8 ||   
-		\ s:field_types[current_field] == 113 ||   
-		\ s:field_types[current_field] == 24 )
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " must press Ctrl+a to edit or view"
-			let s:prompt_flag = s:field_types[current_field]
+	if t:field_types[current_field] == 112 ||
+		\ t:field_types[current_field] == 8 ||   
+		\ t:field_types[current_field] == 113 ||   
+		\ t:field_types[current_field] == 24 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " must press Ctrl+a to edit or view"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
-	elseif s:field_types[current_field] == 12 
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " FORMAT IS yyyy-mm-dd hh24:mi:ss"
-			let s:prompt_flag = s:field_types[current_field]
+	elseif t:field_types[current_field] == 12 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " FORMAT IS yyyy-mm-dd hh24:mi:ss"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
-	elseif s:field_types[current_field] == 180 
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF"
-			let s:prompt_flag = s:field_types[current_field]
+	elseif t:field_types[current_field] == 180 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
-	elseif s:field_types[current_field] == 181 
-		"if s:field_types[current_field] != s:prompt_flag 
-		"	\ || s:cur_field != current_field
-		if s:cur_field != current_field
-			echo "Column ".s:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF TZR"
-			let s:prompt_flag = s:field_types[current_field]
+	elseif t:field_types[current_field] == 181 
+		"if t:field_types[current_field] != t:prompt_flag 
+		"	\ || t:cur_field != current_field
+		if t:cur_field != current_field
+			echo "Column ".t:field_names[current_field]. " FORMAT IS YYYY-MM-DD HH24:MI:SSXFF TZR"
+			let t:prompt_flag = t:field_types[current_field]
 		endif
 	else
-		if s:prompt_flag > 0
+		if t:prompt_flag > 0
 			redraw!
-			let s:prompt_flag = 0
+			let t:prompt_flag = 0
 		endif
 	endif
-	let s:cur_field = current_field
+	let t:cur_field = current_field
 endfunction
 
 function! oracle_tui#GentleCheck()
@@ -3838,11 +4371,23 @@ function! oracle_tui#GetCurrentChar()
 endfunction
 
 function! oracle_tui#Replace_r()
+
 	let l:current_char = oracle_tui#GetCurrentChar()
 
 	if l:current_char == ''
 		call oracle_tui#ShowErr("不能修改分隔符")
 		return ''
+	endif
+
+	let current_column_num = oracle_tui#GetCurrentColumn() - 1
+	if exists('b:lob_file_flag') &&  b:lob_file_flag == 1
+		if t:field_types[current_column_num] == 112 ||
+		\   t:field_types[current_column_num] == 8 || 
+		\   t:field_types[current_column_num] == 113 || 
+		\   t:field_types[current_column_num] == 24
+			call oracle_tui#ShowErr("不能修改lob列")
+			return ''
+		endif
 	endif
 
 	if  strwidth(l:current_char) > 1
@@ -3974,13 +4519,17 @@ endfun
 
 
 function! oracle_tui#SetMapView()
-	command! ReduceColumn call oracle_tui#ReduceColumn()
-	command! CutColumn call oracle_tui#CutColumn()
-	command! PasteColumn call oracle_tui#PasteColumn()
-	command! ShowSql call oracle_tui#ShowSql()
-	command! Crtsql call oracle_tui#Crtsql()
-	command! DBViewHelp call oracle_tui#DBViewHelp()
-	command! -nargs=* Filter call oracle_tui#Filter(<q-args>)
+	"垂直分割窗口时让新文件显示在右侧
+	"setlocal splitright
+
+	"command! -bar -buffer ReduceColumn call oracle_tui#ReduceColumn()
+	"command! -bar -buffer CutColumn call oracle_tui#CutColumn()
+	"command! -bar -buffer PasteColumn call oracle_tui#PasteColumn()
+	"command! -bar -buffer ShowSql call oracle_tui#ShowSql()
+	"command! -bar -buffer DBViewHelp call oracle_tui#DBViewHelp()
+
+	command! -bar -buffer Crtsql call oracle_tui#Crtsql()
+	command! -bar -buffer -nargs=* Filter call oracle_tui#Filter(<q-args>)
 
 	nnoremap <silent> <buffer> J 15j
 	nnoremap <silent> <buffer> K 15k
@@ -4000,7 +4549,7 @@ function! oracle_tui#SetMapView()
 	noremap <silent> <buffer> { zH
 	noremap <silent> <buffer> } zL
 
-	noremap <silent> <buffer> <C-W>k <Nop>
+	noremap <silent> <buffer> <C-W> <Nop>
 	
 	"水平分割窗口，显示列名
 	"nnoremap <silent> <buffer>  wh :WH<CR>
@@ -4009,11 +4558,11 @@ function! oracle_tui#SetMapView()
 	nnoremap <silent> <buffer> wv :call oracle_tui#ViewVerSplit()<CR>
 	"<F1>
 	"map OP :Help<CR>
-	nnoremap <silent> <buffer> OP :DBViewHelp<CR>
+	nnoremap <silent> <buffer> OP :call oracle_tui#DBViewHelp()<CR>
 	
-	nnoremap <silent> <buffer>  :ReduceColumn<CR>
-	nnoremap <silent> <buffer> \x :CutColumn<CR>
-	nnoremap <silent> <buffer> \p :PasteColumn<CR>
+	nnoremap <silent> <buffer> <C-X> :call oracle_tui#ReduceColumn()<CR>
+	nnoremap <silent> <buffer> \x :call oracle_tui#CutColumn()<CR>
+	nnoremap <silent> <buffer> \p :call oracle_tui#PasteColumn()<CR>
 	nnoremap <silent> <buffer> <C-\> :call oracle_tui#SumColumn()<CR>
 	vnoremap <silent> <buffer> <C-\> :call oracle_tui#SumVisual()<CR>
 	
@@ -4025,7 +4574,7 @@ function! oracle_tui#SetMapView()
 	
 	"<F11>
 	"nmap [23~ :ShowSql<CR>
-	nnoremap <silent> <buffer> <expr> [23~ expand("%") =~# ".txt.new$" ? '' : ':ShowSql'
+	nnoremap <silent> <buffer> [23~ :call oracle_tui#ShowSql()<CR>
 	
 	"let mapleader = "|"
 	"按数字进行排序
@@ -4037,7 +4586,7 @@ function! oracle_tui#SetMapView()
 	"生成sql语句
 	"nnoremap <silent> <buffer> \sql :Crtsql<CR>
 
-	cnoremap <silent> <expr> <CR> oracle_tui#ViewCommandLine()
+	"cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckViewCommand()
 
 	" 映射TAB键到跳转到下一个字段功能
 	nnoremap <silent> <buffer> <Tab> :call oracle_tui#JumpToNextField()<CR>
@@ -4054,7 +4603,10 @@ function! oracle_tui#SetMapView()
 endfun
 
 function! oracle_tui#SetMapUpdate()
-	let s:current_update_file = expand('%')
+	"垂直分割窗口时让新文件显示在右侧
+	setlocal splitright
+
+	"let t:current_update_file = expand('%')
 	setlocal t_BE=
 	"不加下面这行ShowDiff()不能显示比较差异
 	set diffopt-=closeoff
@@ -4066,34 +4618,35 @@ function! oracle_tui#SetMapUpdate()
 	"不加这个又没问题了
 	"setlocal notimeout
 	"call UnMap()
-	command! Update call oracle_tui#Update()
-	command! Hid  call oracle_tui#Hid()
-	command! ShowNullChar  call oracle_tui#ShowNullChar()
-	command! NoHid  call oracle_tui#NoHid()
-	command! EditColumnAfter call oracle_tui#EditColumnAfter()
-	command! EditColumnAfter2 call oracle_tui#EditColumnAfter2()
-	command! JumpNextColumn call oracle_tui#JumpNextColumn()
-	command! EditColumnBefore call oracle_tui#EditColumnBefore()
-	command! JumpBeforeColumn call oracle_tui#JumpBeforeColumn()
-	command! EditColumnBefore2 call oracle_tui#EditColumnBefore2()
-	command! NewLine call oracle_tui#NewLine()
-	command! -range ClearCont <line1>,<line2>s/[^]/ /g<bar>normal! 0
-	command! DBModifyHelp call oracle_tui#DBModifyHelp()
-	command! PipeFieldEdit call oracle_tui#PipeFieldEdit()
-	command! SavePipeField call oracle_tui#SavePipeField()
-	command! SavePipeLobField call oracle_tui#SavePipeLobField()
+	"command! -bar -buffer Update call oracle_tui#Update()
+	"command! -bar -buffer Hid  call oracle_tui#Hid()
+	"command! -bar -buffer ShowNullChar  call oracle_tui#ShowNullChar()
+	"command! -bar -buffer NoHid  call oracle_tui#NoHid()
+	"command! -bar -buffer EditColumnAfter call oracle_tui#EditColumnAfter()
+	"command! -bar -buffer EditColumnAfter2 call oracle_tui#EditColumnAfter2()
+	"command! -bar -buffer JumpNextColumn call oracle_tui#JumpNextColumn()
+	"command! -bar -buffer EditColumnBefore call oracle_tui#EditColumnBefore()
+	"command! -bar -buffer JumpBeforeColumn call oracle_tui#JumpBeforeColumn()
+	"command! -bar -buffer EditColumnBefore2 call oracle_tui#EditColumnBefore2()
+	"command! -bar -buffer NewLine call oracle_tui#NewLine()
+	"command! -bar -buffer -range ClearCont <line1>,<line2>s/[^]/ /g<bar>normal! 0
+	"command! -bar -buffer DBModifyHelp call oracle_tui#DBModifyHelp()
+	"command! -bar -buffer PipeFieldEdit call oracle_tui#PipeFieldEdit()
+	"command! -bar -buffer SavePipeField call oracle_tui#SavePipeField()
+	"command! -bar -buffer SavePipeLobField call oracle_tui#SavePipeLobField()
 	"command! -range -nargs=* MySubstitute <line1>,<line2>s<args> | call oracle_tui#AfterSubstitute(<line1>, <line2>)
-	command! -range -nargs=* MySubstitute call oracle_tui#SubstituteWrapper(<line1>, <line2>, <q-args>)
-	command! -nargs=* ShowErr call oracle_tui#ShowErr(<f-args>)
+	"command! -nargs=* ShowErr call oracle_tui#ShowErr(<f-args>)
 
 	"command! -range -nargs=* Substitute execute printf('%d,%d s%s',
     "	\ (<line1> == 1 ? 2 : <line1>),
     "	\ <line2>,
     "	\ <q-args>) |call oracle_tui#AfterSubstitute(<line1>, <line2>) 
 
+	command! -range -nargs=* MySubstitute call oracle_tui#SubstituteWrapper(<line1>, <line2>, <q-args>)
+
 	"cnoremap <buffer> <expr> s/ oracle_tui#ChangeCmd()
 	"cnoremap <buffer> <expr> s oracle_tui#ChangeCmd_s()
-	cnoremap <silent> <expr> <CR> oracle_tui#CheckUpdateCommand()
+	"cnoremap <silent> <buffer> <expr> <CR> oracle_tui#CheckUpdateCommand()
 
 	nnoremap <silent> <buffer> J 15j
 	nnoremap <silent> <buffer> K 15k
@@ -4128,26 +4681,30 @@ function! oracle_tui#SetMapUpdate()
 		noremap <silent> <buffer> zH <Nop>
 	endif
 
-	noremap <silent> <buffer> <C-W>k <Nop>
+	noremap <silent> <buffer> <C-W> <Nop>
+	"noremap <silent> <buffer> <C-W>k <Nop>
+	"noremap <silent> <buffer> <C-W>w <Nop>
+	"noremap <silent> <buffer> <C-W>p <Nop>
+	"noremap <silent> <buffer> <C-W><C-W> <Nop>
+	"noremap <silent> <buffer> <C-W><C-P> <Nop>
 
 	call oracle_tui#ProtectFirstLine()
 
 	nnoremap <buffer> <silent> <expr> r oracle_tui#Replace_r()
-	"noremap <buffer> <silent>  <expr> \cl line('.') > 1 ? ':ClearCont' : ''
-	nnoremap <buffer> <silent> <Tab> :JumpNextColumn<CR>
+	"noremap <buffer> <silent>  <expr> \cl line('.') > 1 ? ':ClearCont<CR>' : ''
+	nnoremap <buffer> <silent> <Tab> :call oracle_tui#JumpNextColumn()<CR>
 	inoremap <buffer> <silent> <Tab> :call oracle_tui#EditColumnAfter2()<CR>
 	"nnoremap <buffer> <silent>  :EditColumnAfter<CR>
 	inoremap <buffer> <silent> <C-T> l:call oracle_tui#EditColumnBefore2()<CR>
 	"nnoremap <buffer> <silent>  :EditColumnBefore<CR>
-	nnoremap <buffer> <silent> <C-T> :JumpBeforeColumn<CR>
+	nnoremap <buffer> <silent> <C-T> :call oracle_tui#JumpBeforeColumn()<CR>
 	inoremap <buffer> <silent> <CR> <Esc>:call oracle_tui#AlignColumnReal()<CR>
-	nnoremap <buffer> <silent>  o o:NewLine<CR>
+	nnoremap <buffer> <silent>  o o:call oracle_tui#NewLine()<CR>
 	"nnoremap <buffer> <C-A> call oracle_tui#PipeFieldEdit()<CR>
-	nnoremap <buffer> <silent> <C-A> :PipeFieldEdit<CR>
-	inoremap <buffer> <silent> <C-A> l:PipeFieldEdit<CR>
+	nnoremap <buffer> <silent> <C-A> :call oracle_tui#PipeFieldEdit()<CR>
+	inoremap <buffer> <silent> <C-A> l:call oracle_tui#PipeFieldEdit()<CR>
 
-	nnoremap <buffer> <silent> <expr> O line('.')==1 ? '' : 'O:NewLine'
-	"nnoremap <buffer> <silent>  O O:NewLine<CR>
+	nnoremap <buffer> <silent> <expr> O line('.')==1 ? '' : 'O:call oracle_tui#NewLine()<CR>'
 	
 	"水平分割窗口，显示列名
 	"nnoremap <silent> <buffer>  wh :HorSplitHeader<CR>
@@ -4159,7 +4716,7 @@ function! oracle_tui#SetMapUpdate()
 	endif
 	"<F1>
 	"map OP :Help<CR>
-	nnoremap <silent> <buffer>  OP :DBModifyHelp<CR>
+	nnoremap <silent> <buffer>  OP :call oracle_tui#DBModifyHelp()<CR>
 
 	"<F3> 冻结/解冻标题行
 	nnoremap <buffer> <silent>  OR :call oracle_tui#ShowUpdateTitle()<CR>
@@ -4175,8 +4732,7 @@ function! oracle_tui#SetMapUpdate()
 	"nnoremap <buffer> <silent>  [20~ :AlignColumn<CR>
 
 	"<F12>
-	"nmap [24~ :Update<CR>
-	nnoremap <silent> <buffer>  [24~ :Update<CR>
+	nnoremap <silent> <buffer>  [24~ :call oracle_tui#Update()<CR>
 
 	inoremap <buffer> <silent> <Esc> <Esc>:call oracle_tui#AlignColumnReal()<CR>
 
@@ -4237,6 +4793,7 @@ function! oracle_tui#SetLocal()
 	setlocal cul
 	setlocal nonu
 	setlocal nohlsearch
+    setlocal noswapfile
 	"加这里没用,要用vim --cmd 加载
 	"setlocal encoding=utf-8 
 	"setlocal termencoding=utf-8
@@ -4264,13 +4821,14 @@ function! oracle_tui#SetEnv()
 	setlocal sbo=hor
 	setlocal nonu
 	setlocal nohlsearch  
+    setlocal noswapfile
 endfun
 
 function! oracle_tui#SetAutocmdView()
 	augroup DBView
 		autocmd!
-		au VimEnter <buffer> echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
-		au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		"au VimEnter <buffer> echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
+		"au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
 		"执行:e 后，会显示第一行,用下面方法解决
 		autocmd BufReadPost <buffer> call feedkeys("lh", 'n')
 		"au VimEnter <buffer> call oracle_tui#ShowViewTitle()
@@ -4295,29 +4853,33 @@ function! oracle_tui#SetAutocmdUpdate()
 		"autocmd BufEnter *.new call oracle_tui#ProtectFirstLine()
 
 		"用:call oracle_tui#Hid也可以
+		"如果没有下面这行，:e刷新时分隔符不会转换
 		au BufNewFile,BufRead,BufEnter,VimEnter  <buffer> :call oracle_tui#Hid()
 		"au BufNewFile,BufRead,BufEnter,VimEnter  <buffer> :call ShowDiff()
 
-		if v:version >= 800
-			au VimEnter <buffer> echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
-		else
-			au VimEnter * echo "F1帮助"
-		endif
-		au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+		"if v:version >= 800
+		"	au VimEnter <buffer> echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
+		"else
+		"	au VimEnter * echo "F1帮助"
+		"endif
+		"au VimEnter <buffer> setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
 
-		autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReadColumn()
-		autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReShowNullChar() 
+		"autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReadColumn()
+		"autocmd BufNewFile,BufRead,BufEnter,VimEnter <buffer> call oracle_tui#ReShowNullChar() 
 		"autocmd vimLeave *.new call ClearColumnList()
 
 		" 使用 CursorMoved 自动调整光标位置
 		autocmd CursorMoved <buffer> call oracle_tui#CursorMovedForUpdate()
 
-		autocmd CursorHold * call oracle_tui#ShowPrompt()
-		setlocal updatetime=500
+		autocmd CursorHold <buffer> call oracle_tui#ShowPrompt()
+		"setlocal updatetime=500
 		"下面的map会导致vim9.2插入模式下按Esc后回延迟1秒，所以要加setlocal ttimeoutlen=50
 		"加setlocal timeoutlen=50同样的效果
 		"inoremap <buffer> <silent> <Esc> <Esc>:call oracle_tui#AlignColumnReal()<CR>
-		setlocal ttimeoutlen=50
+		"setlocal ttimeoutlen=50
+
+		"执行:e时会显示标题行，同时向右移动光标时在第一列范围内不会移动
+		autocmd BufReadPost <buffer> call feedkeys("gglh", 'n')
 	augroup END
 endfun
 

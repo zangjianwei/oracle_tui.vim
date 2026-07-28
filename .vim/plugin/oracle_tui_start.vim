@@ -165,6 +165,7 @@ function! oracle_tui_start#ConnectDB(...)
 	endif
 
 	let w:main_window_flag = 1
+	let t:main_tab_flag = 1
 
 	"set paste 会使imap映射失效
 	set nopaste
@@ -175,29 +176,32 @@ function! oracle_tui_start#ConnectDB(...)
 	endif
 
 	setlocal nohlsearch
-	command! Line call oracle_tui#Line()
-	command! UnLine call oracle_tui#UnLine()
+
+	"command! -bar -buffer Line call oracle_tui#Line()
+	"command! -bar -buffer UnLine call oracle_tui#UnLine()
+	"command! -bar -buffer -range Plan <line1>,<line2> call oracle_tui#Plan()
+	"command! -bar -buffer GetWord call oracle_tui#GetWord()
+	"command! -bar -buffer ShowTab call oracle_tui#ShowTab()
+	"command! -bar -buffer DescObj call oracle_tui#DescObj()
+	"command! -bar -buffer GrepTab call oracle_tui#GrepTab()
+	"command! -bar -buffer IfCommit call oracle_tui#IfCommit()
+	"command! -bar -buffer Fsql call oracle_tui#Fsql()
+	"command! -bar -buffer -nargs=1 RollCommit call oracle_tui#RollCommit(<f-args>)
+	"command! -bar -buffer ListObj call oracle_tui#ListObj()
+	"command! -bar -buffer CheckNoCommit call oracle_tui#CheckNoCommit()
+	"command! -bar -buffer DBCliHelp call oracle_tui#DBCliHelp()
+	"command! -bar -buffer -nargs=* ShowErr call oracle_tui#ShowErr(<f-args>)
+
 	"command! -nargs=? -range Exe <line1>,<line2> call oracle_tui#ExeSql(<f-args>)
-	command! -range Plan <line1>,<line2> call oracle_tui#Plan()
-	command! -nargs=*  Tablist  call oracle_tui#Tablist(<f-args>)
-	command! GetWord call oracle_tui#GetWord()
-	command! ShowTab call oracle_tui#ShowTab()
-	command! DescObj call oracle_tui#DescObj()
-	command! GrepTab call oracle_tui#GrepTab()
-	command! Seelock call oracle_tui#Seelock()
-	command! Tabspace call oracle_tui#Tabspace()
-	command! Tabused call oracle_tui#Tabused()
-	command! Nowsql call oracle_tui#Nowsql()
-	command! -nargs=* Unlock call oracle_tui#Unlock(<f-args>)
-	command! IfCommit call oracle_tui#IfCommit()
-	command! Fsql call oracle_tui#Fsql()
-	command! -nargs=1 RollCommit call oracle_tui#RollCommit(<f-args>)
-	command! ListObj call oracle_tui#ListObj()
 	"command! ConvWork call oracle_tui#ConvWork()
 	"command! ShowMode call oracle_tui#ShowMode()
-	command! CheckNoCommit call oracle_tui#CheckNoCommit()
-	command! DBCliHelp call oracle_tui#DBCliHelp()
-	command! -nargs=* ShowErr call oracle_tui#ShowErr(<f-args>)
+
+	command! -bar -buffer -nargs=*  Tablist  call oracle_tui#Tablist(<f-args>)
+	command! -bar -buffer Tabspace call oracle_tui#Tabspace()
+	command! -bar -buffer Tabused call oracle_tui#Tabused()
+	command! -bar -buffer Nowsql call oracle_tui#Nowsql()
+	command! -bar -buffer Seelock call oracle_tui#Seelock()
+	command! -bar -buffer -nargs=* Unlock call oracle_tui#Unlock(<f-args>)
 
 	if s:mydblist == 1 
 		execute "badd ".$HOME."/oracle_tui/crtdb.txt"
@@ -212,19 +216,19 @@ function! oracle_tui_start#ConnectDB(...)
 	endif
 
 	"- 减小窗口宽度
-	nnoremap - <
+	nnoremap <silent> <expr> - exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W><' : ''
 	"_ 增加窗口宽度
-	nnoremap = >
+	nnoremap <silent> <expr> = exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>>' : ''
 	
 	"= 减小窗口高度
-	nnoremap _ -  
+	nnoremap <silent> <expr> _ exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>-' : ''
 	"+  增加窗口高度
-	nnoremap + +
+	nnoremap <silent> <expr> + exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>+' : ''
 	
-	nnoremap <silent> <C-Up> k
-	nnoremap <silent> <C-Down> j
-	nnoremap <silent> <C-Left> h
-	nnoremap <silent> <C-Right> l
+	nnoremap <silent> <expr> <C-Up> exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>k' : ''
+	nnoremap <silent> <expr> <C-Down> exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>j' : ''
+	nnoremap <silent> <expr> <C-Left> exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>h' : ''
+	nnoremap <silent> <expr> <C-Right> exists("t:main_tab_flag") && t:main_tab_flag == 1 ? '<C-W>l' : ''
 	
 	"map J 10j
 	"map K 10k
@@ -232,36 +236,36 @@ function! oracle_tui_start#ConnectDB(...)
 	"<F1> 显示帮助
 	"nmap <silent> OP :Help<CR>
 	"nnoremap <expr>  OP expand("%") == "backlist" ? ':HelpBackList<CR>' : ':DBCliHelp<CR>'
-	nnoremap  OP :DBCliHelp<CR>
+	nnoremap <silent> <expr> OP exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#DBCliHelp()<CR>" : ''
 	
 	"<F2> 回滚事务
-	nnoremap <silent>  OQ :RollCommit 0<CR>
+	nnoremap <silent> <expr> OQ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#RollCommit(0)<CR>" : ''
 	
 	"<F6> 提交事务
-	nnoremap <silent>  [17~ :RollCommit 1<CR>
+	nnoremap <silent> <expr> [17~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#RollCommit(1)<CR>" : ''
 	
 	"<F3> 查看锁
 	"nnoremap <silent>  OR :Seelock<CR>
 	
 	"<F4> 查看是否有未提交事务
-	nnoremap <silent>  OS :IfCommit<CR>
+	nnoremap <silent> <expr> OS exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#IfCommit()<CR>" : ''
 	
 	"<F5> 查看执行计划
-	noremap <silent>  [15~ :Plan<CR>
+	noremap <silent> <expr> [15~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#Plan()<CR>" : ''
 	
 	"<F7>
-	nnoremap <silent>  [18~ :ListObj<CR>
+	nnoremap <silent> <expr> [18~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#ListObj()<CR>" : ''
 	
 	"<F8> 执行sql
 	"map <silent> [19~ :Exe<CR>
-	nnoremap <silent>  [19~ :call oracle_tui#ExeSql('n')<CR>
-	vnoremap <silent>  [19~ :<C-U>call oracle_tui#ExeSql('v')<CR>
+	nnoremap <silent> <expr> [19~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#ExeSql('n')<CR>" : ''
+	vnoremap <silent> <expr> [19~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":<C-U>call oracle_tui#ExeSql('v')<CR>" : ''
 	
 	"<F9> 显示crtdb.txt中表定义
-	nnoremap <silent>  [20~ :ShowTab<CR>
+	nnoremap <silent> <expr> [20~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#ShowTab()<CR>" : ''
 	
 	"<F10> 显示创建数据库对象语句
-	nnoremap <silent>  [21~ :DescObj<CR>
+	nnoremap <silent> <expr> [21~ exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#DescObj()<CR>" : ''
 
 	"<F11> 查看表空间
 	"nnoremap <silent>  [23~ :Tabspace<CR>
@@ -275,8 +279,8 @@ function! oracle_tui_start#ConnectDB(...)
 	
 	"搜索光标所在的字符串对应表名
 	"nnoremap <silent>  <CR> :GrepTab<CR>
-	inoremap <silent>  <C-K> :GrepTab<CR>
-	nnoremap <silent>  <C-K> :GrepTab<CR>
+	inoremap <silent> <expr> <C-K> exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#GrepTab()<CR>" : ''
+	nnoremap <silent> <expr> <C-K> exists("w:main_window_flag") && w:main_window_flag == 1 ? ":call oracle_tui#GrepTab()<CR>" : ''
 
 	"cnoremap  <expr> q <SID>HandleQuit()
 	"cnoremap  <expr> x <SID>HandleQuit_x()
@@ -299,12 +303,12 @@ function! oracle_tui_start#ConnectDB(...)
 	"	autocmd WinEnter * let s:last_win_nr = winnr()
 	"augroup END
 
-	cnoreabbrev <silent> <expr> only (getcmdtype()==':') ? 'sil only<bar>sil tabonly<bar>' : 'only'
+	"cnoreabbrev <silent> <expr> only (getcmdtype()==':') ? 'sil only<bar>sil tabonly<bar>' : 'only'
 	redraw!
 	call oracle_tui#ShowErr("欢迎进入ORACLE TUI 数据库客户端,按F1显示帮助")
 endfun
 
-command! -nargs=? Connect call oracle_tui_start#ConnectDB(<f-args>)
+command! -buffer -nargs=? Connect call oracle_tui_start#ConnectDB(<f-args>)
 "command! VerSplit call oracle_tui#VerSplit()
 "command! -range Sum <line1>,<line2> call oracle_tui#Sum()
 
