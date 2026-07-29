@@ -44,8 +44,8 @@ Oracle TUI 是一个轻量级、基于终端的 Oracle UNIX/Linux 数据库管�
 
 2.2 安装步骤                                *oracle_tui-setup*
 
-1. 将 oracle_tui.tar 放在安装用户的 $HOME 目录下：
-  tar xvf oracle_tui.tar
+1. cd install.sh文件所在目录：
+  sh ./install.sh
 
 2. 修改 profile，添加 PATH：
   export PATH=$PATH:$HOME/oracle_tui:.
@@ -220,7 +220,7 @@ Oracle TUI 提供三种窗口模式：
   命令                 功能  
   -------------------- --------------------------
   :Crtsql              根据当前数据文件生成 SQL 
-  :Filter /match_str   过滤当前列符合条件的内容  查询窗口     
+  :Filter /match_str   过滤当前列符合条件的内容       
 
 5.3 数据修改窗口                           *oracle_tui-keys-edit*
 
