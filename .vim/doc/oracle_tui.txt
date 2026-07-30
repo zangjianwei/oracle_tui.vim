@@ -51,8 +51,8 @@ Features:
 
 2.2 Setup Steps                             *oracle_tui-setup*
 
-1. Change to the directory where the install.sh file is located.:
-   sh ./install.sh
+1. cd to the directory where install.sh is located. 
+   sh ./install.sh 
 
 2. Modify profile, add PATH:
    export PATH=$PATH:$HOME/oracle_tui:.

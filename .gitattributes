@@ -1,0 +1,4 @@
+*.sh text eol=lf
+*.txt text eol=lf
+*.vim text eol=lf
+*.md text eol=lf
