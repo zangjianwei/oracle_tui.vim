@@ -289,6 +289,7 @@ EOF
 				}
 
 				$3 = max_len 
+				$3 = $3 + 1
 			}
 			else if ($2 == 12) #date
 			{
