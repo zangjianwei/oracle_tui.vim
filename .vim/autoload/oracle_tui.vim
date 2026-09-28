@@ -382,14 +382,14 @@ function! oracle_tui#ExeSql(mode) range
 			return
 		endtry
 
-		let t:current_update_file = result_file
-		call oracle_tui#InitUpdateWindowVar() 
-		set mouse=
-
-		"tabclose 时自动删除缓冲区
-		"set bufhidden=delete
-
 		try
+			let t:current_update_file = result_file
+			call oracle_tui#InitUpdateWindowVar() 
+			set mouse=
+
+			"tabclose 时自动删除缓冲区
+			"set bufhidden=delete
+
 			call oracle_tui#ReadColumn()
 			call oracle_tui#SaveLobAndSeq()
 			call oracle_tui#SetLocal()
@@ -398,6 +398,20 @@ function! oracle_tui#ExeSql(mode) range
 			call oracle_tui#SetAutocmdUpdate()
 			call oracle_tui#Hid()
 			normal! gg
+
+			setlocal statusline=%{&fileencoding}\ show_diff:%{t:show_diff_flag?'on':'off'}\ \ show_nullchar:%{t:show_nullchar_flag?'on':'off'}\ %=%l/%L\ %c-%v\ %p%%
+			setlocal laststatus=2
+
+			setlocal updatetime=500
+			setlocal ttimeoutlen=50
+
+			if v:version >= 800
+				echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
+			else
+				echo "F1帮助"
+			endif
+
+			let w:update_window_flag = 1
 		catch 
 			tabclose
 			redraw!
@@ -409,25 +423,7 @@ function! oracle_tui#ExeSql(mode) range
 			else
 				call oracle_tui#ShowErr("初始化文件时被中断!")
 			endif
-			return
 		endtry
-
-		"syn match Comment /<upd_[^>]*_lob_[^>]*\.old>/
-
-		"setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
-		setlocal statusline=%{&fileencoding}\ show_diff:%{t:show_diff_flag?'on':'off'}\ \ show_nullchar:%{t:show_nullchar_flag?'on':'off'}\ %=%l/%L\ %c-%v\ %p%%
-		setlocal laststatus=2
-
-		setlocal updatetime=500
-		setlocal ttimeoutlen=50
-
-		if v:version >= 800
-			echo "按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助"
-		else
-			echo "F1帮助"
-		endif
-
-		let w:update_window_flag = 1
 	else
 		"此处要catch异常，否则shell被中断后后面的语句不再执行(比如redraw!)
 		try
@@ -491,50 +487,49 @@ function! oracle_tui#ExeSql(mode) range
 			return
 		endif
 
-		"不加下面这行，会和标题行不同步
-		setlocal ve=all
-		normal! gg
-		setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
-		setlocal laststatus=2
+		try
+			"不加下面这行，会和标题行不同步
+			setlocal ve=all
+			normal! gg
+			setlocal statusline=%{&fileencoding}\ %=%l/%L\ %c-%v\ %p%%
+			setlocal laststatus=2
 
-		"tabclose 时自动删除缓冲区,否则会带入上次进入此文件时定义的map
-		"set bufhidden=delete
+			"tabclose 时自动删除缓冲区,否则会带入上次进入此文件时定义的map
+			"set bufhidden=delete
 
-		set mouse=
+			set mouse=
 
-		call oracle_tui#InitViewWindowVar() 
-		let t:current_result_file = result_file
-		let t:current_sql_file = sql_file
+			call oracle_tui#InitViewWindowVar() 
+			let t:current_result_file = result_file
+			let t:current_sql_file = sql_file
 
-		call oracle_tui#SetLocal()
-    	let separator_text = getline(3)
-		if separator_text =~ "^[ -][ -]*$" && one_select_flag == 1
-			try
+			call oracle_tui#SetLocal()
+    		let separator_text = getline(3)
+			if separator_text =~ "^[ -][ -]*$" && one_select_flag == 1
 				call oracle_tui#ShowViewTitle()
 				call oracle_tui#SetMapView()
 				call oracle_tui#SetAutocmdView()
-			catch 
-				tabclose
+
+				let t:result_tab_flag = 1
+
 				redraw!
-
-				if v:exception !~# 'Vim:Interrupt'
-					echom "v:exception=".v:exception 
-					echom "v:errmsg=".v:errmsg
-					echom "v:throwpoint=".v:throwpoint
-					call oracle_tui#ShowErr('初始化文件时异常:'.v:exception)
-				else
-					call oracle_tui#ShowErr("初始化文件时被中断!")
-				endif
-				return
-			endtry
-
-			let t:result_tab_flag = 1
-
+    			echo '按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助'
+			else
+				redraw!
+			endif
+		catch 
+			tabclose
 			redraw!
-    		echo '按[或{左移 ]或}右移 j或J下移 k或K上移 F1帮助'
-		else
-			redraw!
-		endif
+
+			if v:exception !~# 'Vim:Interrupt'
+				echom "v:exception=".v:exception 
+				echom "v:errmsg=".v:errmsg
+				echom "v:throwpoint=".v:throwpoint
+				call oracle_tui#ShowErr('初始化设置时异常:'.v:exception)
+			else
+				call oracle_tui#ShowErr("初始化设置时被中断!")
+			endif
+		endtry
 	endif
 endfun
 
@@ -736,9 +731,9 @@ function! oracle_tui#Tablist(...)
 	let pid=getpid()
 	if s:mydblist == 1
     	if a:0 == 1
-			let cmd = "0read !(cat ".$HOME."/oracle_tui/crtdb.txt;cat ".$HOME."/oracle_tui/kjdb.txt)|grep ^表名|awk '{printf \"\\%-30s    \\%s\\n\", $2,$4}' |grep -i ".a:1
+			let cmd = "0read !(iconv -f gbk -t utf-8 ".$HOME."/oracle_tui/crtdb.txt;iconv -f gbk -t utf-8 ".$HOME."/oracle_tui/kjdb.txt)|grep ^表名|awk '{printf \"\\%-30s    \\%s\\n\", $2,$4}' |grep -i ".a:1
 		else
-			let cmd = "0read !(cat ".$HOME."/oracle_tui/crtdb.txt;cat ".$HOME."/oracle_tui/kjdb.txt)|grep ^表名|awk '{printf \"\\%-30s    \\%s\\n\", $2,$4}'"
+			let cmd = "0read !(iconv -f gbk -t utf-8 ".$HOME."/oracle_tui/crtdb.txt;iconv -f gbk -t utf-8 ".$HOME."/oracle_tui/kjdb.txt)|grep ^表名|awk '{printf \"\\%-30s    \\%s\\n\", $2,$4}'"
 		endif
 	else
     	if a:0 == 1
@@ -4780,6 +4775,8 @@ function! oracle_tui#SetLocal()
 	"t_BE=^[[?2004h  
 	"setlocal t_BE=
 	"setlocal virtualedit=all
+	"当设置了set paste时,ab imap cmap <CR> 映射会失效
+	setlocal nopaste
 	setlocal virtualedit=
 	setlocal incsearch
 	setlocal noequalalways
